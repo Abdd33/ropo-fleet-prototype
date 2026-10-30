@@ -1,6 +1,6 @@
 # ROPO Fleet · 车队运营交互原型
 
-基于提供的 7 张 Figma SVG 及补充地图图片制作的桌面网页原型。保留深色界面风格及原稿图片素材，将导航、表单、筛选、弹窗和状态变化重建为原生 HTML / CSS / JavaScript。
+基于提供的 7 张 Figma SVG 及补充地图图片制作的桌面网页原型。保留深色界面风格及原稿图片素材，使用原生业务代码与 React / Ant Design 组件，实现导航、表单、筛选、弹窗和状态变化。
 
 ## 在线访问
 
@@ -63,12 +63,29 @@ node server.cjs
 
 SVG 中的文字已经转为矢量路径，无法直接恢复原始文本或 Figma 交互配置。本原型根据画面重建文字与组件，并补充推断的交互。逐页说明见 [INTERACTIONS.md](INTERACTIONS.md)。
 
+## Ant Design 组件接入
+
+已接入 Ant Design 6.6.8、React 19.3.1 和中文语言包，使用与原型配色一致的深色主题。任务与调度页使用 Button、DatePicker、Select、Input、Segmented 和 Tooltip；全局消息提示及确认弹窗通过 App 上下文消费主题。自定义时间轴、车辆选择与流程画布继续使用原有业务逻辑。
+
+`dist/` 已包含预编译组件和版权声明，打开网页无需额外下载 React 或 Ant Design，也不依赖 CDN。修改组件源码 `src/antd-ui.jsx` 或其样式后，需要重新构建（Node.js 与 pnpm 11）：
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run build
+node server.cjs
+```
+
+构建只更新 `dist/antd-ui.js`、组件样式及第三方声明，不清空原有静态资源。主题配置集中在 `src/antd-ui.jsx` 的 `fleetTheme` 中。
+
 ## 文件结构
 
 | 文件 / 目录 | 用途 |
 |---|---|
 | `dist/index.html` | 可直接打开的入口 |
-| `dist/*.js`、`dist/*.css` | 页面逻辑与样式源码 |
+| `dist/*.js`、`dist/*.css` | 业务页面代码与预编译组件资源 |
+| `src/antd-ui.jsx`、`src/antd-ui.css` | React / Ant Design 组件、主题与业务接口 |
+| `package.json`、`pnpm-lock.yaml`、`build.mjs` | 固定依赖版本与构建脚本 |
+| `dist/THIRD_PARTY_NOTICES.txt` | 打包依赖的许可与版权声明 |
 | `dist/assets/` | 从原稿提取、整理后的图像素材 |
 | `server.cjs` | 可选的本机静态服务器 |
 | `INTERACTIONS.md` | 页面交互与推断范围说明 |

@@ -1,0 +1,20 @@
+{
+  "name": "ropo-fleet-prototype",
+  "version": "1.1.0",
+  "private": true,
+  "description": "ROPO Fleet interactive prototype with Ant Design components",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node server.cjs"
+  },
+  "dependencies": {
+    "antd": "6.6.8",
+    "dayjs": "1.11.23",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

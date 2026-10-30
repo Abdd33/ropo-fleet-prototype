@@ -1,6 +1,6 @@
 # GitHub Pages 发布
 
-本项目是静态 HTML / CSS / JavaScript 原型，无需构建、服务端或 API 密钥。
+本项目发布为静态 HTML / CSS / JavaScript，已提交预编译的 React / Ant Design 组件，可直接部署，不需要服务端或 API 密钥。修改 src/ 组件时须先构建。
 
 已发布网页：https://abdd33.github.io/ropo-fleet-prototype/
 
@@ -17,7 +17,9 @@
 在源码目录提交修改，然后更新发布分支：
 
 ```sh
-git add dist README.md INTERACTIONS.md VERIFICATION.md DEPLOYMENT.md server.cjs .gitignore
+pnpm install --frozen-lockfile
+pnpm run build
+git add dist src package.json pnpm-lock.yaml build.mjs README.md INTERACTIONS.md VERIFICATION.md DEPLOYMENT.md server.cjs .gitignore
 git commit -m "Update fleet prototype"
 git push origin main
 git subtree split --prefix dist -b pages-release
