@@ -1,0 +1,57 @@
+.vehicles-page { display:flex; flex-direction:column; min-height:calc(100vh - 105px); color:var(--text); }
+.vehicles-page button,.vehicles-page input,.vehicles-page select { font:inherit; }
+.vehicle-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin:0 0 20px; }
+.vehicle-heading-title { display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
+.vehicle-heading h1 { font-size:23px; letter-spacing:.5px; margin:0; font-weight:650; }
+.vehicle-summary { display:flex; gap:0; background:#0b0f18; padding:7px 10px; font-size:11px; border-radius:3px; }
+.vehicle-summary > span { padding:0 12px; border-right:1px solid #2a2d38; white-space:nowrap; }
+.vehicle-summary > span:first-child { padding-left:0; }.vehicle-summary > span:last-child { border:0; padding-right:0; }
+.vehicle-summary b { font-size:15px; font-variant-numeric:tabular-nums; margin:0 4px; }.vehicle-summary i { width:6px;height:6px;display:inline-block;background:currentColor;border-radius:50%; }
+.vehicle-summary .blue { color:var(--blue); }.vehicle-summary .green { color:var(--green); }.vehicle-summary .purple { color:#a88cff; }.vehicle-summary .red { color:#f35d69; }
+.vehicle-toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:22px; }
+.vehicle-filters { display:flex; gap:4px; flex-wrap:wrap; }
+.vehicle-filters button { border:0; background:#0b0f18; color:#b7c1d2; font-size:12px; font-weight:600; padding:7px 12px; border-radius:3px; cursor:pointer; }
+.vehicle-filters button:hover { color:#fff;background:#252b3a; }.vehicle-filters button.active { background:var(--blue); color:#081c3a; }
+.vehicle-filters span { margin-left:3px; }
+.vehicle-tools { display:flex; gap:10px; align-items:center; }
+.vehicle-search { background:#0b0f18; display:flex; align-items:center; gap:7px; padding:4px 9px; border:1px solid transparent; border-radius:3px; }
+.vehicle-search:focus-within { border-color:var(--blue); }.vehicle-search > span { font-size:22px;line-height:20px;color:#a8b7cb; }
+.vehicle-search input { background:transparent;color:var(--text);outline:none;border:0;font-size:12px;width:180px;height:24px; }
+.vehicle-search input::placeholder {color:#727e92; }
+.vehicle-view-switch {display:flex; background:#0b0f18; padding:2px; border-radius:3px; }
+.vehicle-view-switch button {background:none;border:0;color:#a4b0c5;font-size:19px;padding:0 7px;cursor:pointer;height:28px;line-height:26px; }
+.vehicle-view-switch button.active {background:#293144;color:#abc7ff; }
+.vehicle-sort {font-size:11px;color:#8590a4;white-space:nowrap;display:flex;align-items:center;gap:2px; }
+.vehicle-sort select {background:#111620;border:0;color:#bfc9da;padding:7px 3px;font-size:11px;cursor:pointer;outline:none; }
+.vehicle-results { flex:1; }
+.vehicle-grid {display:grid; grid-template-columns:repeat(6,minmax(0,1fr));gap:17px 12px; }
+.vehicle-card {position:relative;border-left:4px solid var(--blue);background:#191d28;border-radius:2px;min-width:0;transition:background .15s,box-shadow .15s,transform .15s;--status-color:var(--blue); }
+.vehicle-card:hover {background:#222936;box-shadow:0 0 0 1px #46576f;transform:translateY(-1px); }.vehicle-card.is-selected {box-shadow:0 0 0 1px #8bb4ff;background:#25324a; }
+.vehicle-card.status-waiting {--status-color:var(--amber);border-color:var(--amber); }.vehicle-card.status-offline {--status-color:#f24a55;border-color:#f24a55; }.vehicle-card.status-maintenance {--status-color:#f2bd45;border-color:#f2bd45; }.vehicle-card.status-charging {--status-color:#9c6aff;border-color:#9c6aff; }.vehicle-card.status-standby {--status-color:var(--green);border-color:var(--green); }
+.vehicle-card-main {width:100%;display:block;border:0;background:none;text-align:left;color:inherit;padding:9px 9px 10px 6px;cursor:pointer;min-height:65px; }
+.vehicle-card-title {display:flex;align-items:center;justify-content:space-between;gap:5px; }
+.vehicle-card-title strong {font-size:14px;letter-spacing:.2px;font-weight:650;line-height:18px; }
+.vehicle-status {font-size:10px;padding:3px 5px;background:#18304b;color:#6aa7ff;white-space:nowrap;border-radius:2px;display:inline-block;line-height:14px; }
+.vehicle-status.status-waiting {color:#ffc038;background:#3a3020; }.vehicle-status.status-offline {color:#ff5b64;background:#3d232c; }.vehicle-status.status-maintenance {color:#ffc13c;background:#372e20; }.vehicle-status.status-charging {color:#b18aff;background:#332748; }.vehicle-status.status-standby {color:#19d0a0;background:#15352f; }
+.vehicle-card-data {display:flex;align-items:baseline;gap:5px;margin-top:4px;white-space:nowrap;overflow:hidden; }
+.vehicle-card-data > b {font-size:16px;color:#7fcbc1;font-weight:500;line-height:19px; }.vehicle-card-data > b small {font-size:12px; }.vehicle-card-data > span {font-size:10px;color:#8d98ab;overflow:hidden;text-overflow:ellipsis; }
+.vehicle-card.status-offline .vehicle-card-data > b {color:#c8ccdb; }.vehicle-card.status-charging .vehicle-card-data > b {color:#ae82ff; }.vehicle-card .vehicle-card-data > b.low-soc {color:var(--amber); }
+.vehicle-charge-track {position:absolute;bottom:4px;left:7px;right:5px;height:2px;background:#303545; }.vehicle-charge-track > span {display:block;height:100%;background:var(--status-color);opacity:.8; }
+.vehicle-card-check {position:absolute;left:4px;top:6px;opacity:0;transition:opacity .12s;background:#1a2331;padding:2px;line-height:12px;border-radius:2px; }.vehicle-card-check input {width:13px;height:13px;cursor:pointer;margin:0;accent-color:var(--blue); }
+.vehicle-card:hover .vehicle-card-check,.vehicle-card:focus-within .vehicle-card-check,.vehicle-card-check.has-selection {opacity:1; }.vehicle-card:hover .vehicle-card-title strong,.vehicle-card:focus-within .vehicle-card-title strong,.vehicle-card:has(.has-selection) .vehicle-card-title strong {padding-left:19px; }
+.vehicle-error {color:#ff6873!important; }.vehicle-pass {color:var(--green); }
+.vehicle-footer {display:flex;align-items:center;justify-content:space-between;gap:14px;background:#0b0f18;padding:12px 8px;margin:20px -2px 0;font-size:11px;color:#aeb9cd;min-height:46px; }
+.vehicle-footer-left,.vehicle-footer-right {display:flex;align-items:center;gap:10px; }.vehicle-footer-left > span:first-child {white-space:nowrap; }.vehicle-footer-separator {height:14px;width:1px;background:#384054; }.vehicle-select-all {display:flex;align-items:center;gap:5px;white-space:nowrap;cursor:pointer; }.vehicles-page input[type=checkbox] {accent-color:var(--blue);width:13px;height:13px; }
+.vehicle-footer .btn {font-size:11px;padding:5px 9px;min-height:26px; }.vehicles-page button:disabled {opacity:.35;cursor:not-allowed; }
+.vehicle-sync {font-size:10px;white-space:nowrap;letter-spacing:.5px; }.vehicle-sync i {display:inline-block;background:var(--green);border-radius:50%;width:6px;height:6px;margin-right:4px; }
+.vehicle-page-button {border:0;border-radius:2px;background:#1f2531;color:#c7d3e4;width:28px;height:28px;font-size:20px!important;cursor:pointer; }
+.vehicle-text-button {border:0;background:transparent;color:#91bdff;cursor:pointer;text-align:left;padding:3px; }.vehicle-text-button:hover {color:white; }.vehicle-text-button small {display:block;color:var(--muted);font-size:10px;margin-top:4px; }
+.vehicle-table-wrap {overflow:auto;border:1px solid #242b39;border-radius:3px; }.vehicle-table {width:100%;border-collapse:collapse;font-size:12px; }
+.vehicle-table th {background:#202633;color:#8f9eb5;font-size:11px;font-weight:500;padding:12px 10px;text-align:left; }.vehicle-table td {padding:10px;border-top:1px solid #242b39; }.vehicle-table tbody tr {background:#171c26; }.vehicle-table tbody tr:nth-child(even) {background:#141923; }.vehicle-table tbody tr:hover,.vehicle-table tr.is-selected {background:#222e43; }
+.vehicle-select-cell {width:25px; }.vehicle-table-soc {display:inline-block;min-width:34px;color:var(--green); }.vehicle-table-soc.low-soc {color:var(--amber); }.vehicle-table-bar {display:inline-block;width:65px;height:4px;background:#2b3241;margin-left:7px;vertical-align:middle; }.vehicle-table-bar i {display:block;height:100%; }
+.vehicle-empty {text-align:center;padding:110px 24px;color:#94a1b6;border:1px dashed #30394b;border-radius:4px;background:#151a24; }.vehicle-empty h3 {font-size:17px;color:var(--text); }.vehicle-empty p {font-size:13px;line-height:1.8;margin-bottom:24px; }.vehicle-empty-icon {font-size:46px;color:#6386bd; }
+.vehicle-modal-intro {font-size:13px;line-height:1.8; }.vehicle-modal-note {padding:10px 12px;background:#332c1d;border:1px solid #5f4c25;color:#e7c782;font-size:12px;margin-bottom:15px;border-radius:4px; }
+.vehicle-inspection-list {max-height:260px;overflow:auto;margin:15px 0; }.vehicle-inspection-list > div {display:flex;justify-content:space-between;gap:20px;padding:10px;border-bottom:1px solid #30384a;font-size:12px; }
+@media (max-width:1300px) {.vehicle-grid {grid-template-columns:repeat(5,minmax(0,1fr)); }.vehicle-summary {gap:0; }.vehicle-summary > span {padding:0 7px; }.vehicle-tools {flex-wrap:wrap; }.vehicle-toolbar {align-items:flex-start; }}
+@media (max-width:1100px) {.vehicle-grid {grid-template-columns:repeat(4,minmax(0,1fr)); }.vehicle-heading-title {gap:10px; }.vehicle-sync {display:none; }.vehicle-footer {flex-wrap:wrap; }.vehicle-toolbar {gap:14px; }.vehicle-tools {width:100%;justify-content:flex-end; }.vehicle-search {margin-right:auto; }}
+@media (max-width:760px) {.vehicle-grid {grid-template-columns:repeat(3,minmax(0,1fr)); }.vehicle-heading {align-items:flex-start; }.vehicle-summary {flex-wrap:wrap;row-gap:5px; }.vehicle-footer-left {flex-wrap:wrap; }.vehicle-sort {display:none; }.vehicle-search input {width:150px; }.vehicle-filters button {padding:6px 8px; }}
