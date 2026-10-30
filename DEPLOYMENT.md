@@ -2,6 +2,10 @@
 
 本项目是静态 HTML / CSS / JavaScript 原型，无需构建、服务端或 API 密钥。
 
+已发布网页：https://abdd33.github.io/ropo-fleet-prototype/
+
+公开源码仓库：https://github.com/Abdd33/ropo-fleet-prototype
+
 ## 仓库结构
 
 - `main`：完整源码、页面图片和说明文档。

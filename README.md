@@ -2,6 +2,14 @@
 
 基于提供的 7 张 Figma SVG 及补充地图图片制作的桌面网页原型。保留深色界面风格及原稿图片素材，将导航、表单、筛选、弹窗和状态变化重建为原生 HTML / CSS / JavaScript。
 
+## 在线访问
+
+- 网页：[ROPO Fleet 在线原型](https://abdd33.github.io/ropo-fleet-prototype/)
+- 仓库：[Abdd33/ropo-fleet-prototype](https://github.com/Abdd33/ropo-fleet-prototype)
+- 直接打开[任务与调度](https://abdd33.github.io/ropo-fleet-prototype/#plans)。
+
+仓库和网页均为公开。线上访问者的数据仍只保存在各自浏览器；本地文件和线上网址的浏览器保存状态不会自动同步。更新方式见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
 ## 打开方式
 
 1. 完整解压项目文件夹，保留目录结构。
