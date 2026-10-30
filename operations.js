@@ -128,10 +128,21 @@ function saveCursor(){F.state.scheduleCursor={date:scheduleDate,range:scheduleRa
 function mountSchedule(root){
   scheduleRoot=root;const controller=new AbortController(),signal=controller.signal;
   updateCursor();
-  root.querySelector('#schedule-search').addEventListener('input',e=>{scheduleQuery=e.target.value;root.querySelector('#schedule-content').innerHTML=scheduleContents();updateCursor();},{signal});
-  root.querySelector('#schedule-type').addEventListener('change',e=>{scheduleType=e.target.value;F.render();},{signal});
-  root.querySelector('#schedule-status').addEventListener('change',e=>{scheduleStatus=e.target.value;F.render();},{signal});
-  root.querySelector('#schedule-date').addEventListener('change',e=>{if(e.target.value){scheduleDate=e.target.value;cursorMinute=620;saveCursor();F.render();}},{signal});
+  const disposeControls=F.ui.mountSchedule(root.querySelector('#schedule-controls'),{
+    initial:{date:scheduleDate,range:scheduleRange,type:scheduleType,status:scheduleStatus,query:scheduleQuery,view:scheduleView},
+    types:[...new Set(F.state.plans.map(p=>p.type))],
+    statuses:['scheduled','waiting','running','completed','cancelled'].map(value=>({value,label:F.status[value][0]})),
+    onCurrent:()=>F.pages.plans.action('schedule-reset-time'),
+    onChange:patch=>{
+      const scroll=root.querySelector('.dispatch-scroll')?.scrollLeft||0;
+      if('date' in patch)scheduleDate=patch.date;if('range' in patch)scheduleRange=patch.range;
+      if('type' in patch)scheduleType=patch.type;if('status' in patch)scheduleStatus=patch.status;
+      if('query' in patch)scheduleQuery=patch.query;if('view' in patch)scheduleView=patch.view;
+      if('date' in patch||'range' in patch||patch.resetTime){cursorMinute=620;saveCursor();}
+      root.querySelector('#schedule-content').innerHTML=scheduleContents();updateCursor();
+      const scroller=root.querySelector('.dispatch-scroll');if(scroller&&!patch.resetTime)scroller.scrollLeft=scroll;
+    }
+  });
   const moveCursor=e=>{const hours=root.querySelector('.dispatch-hours');if(!hours)return;const rect=hours.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(e.clientX-cursorDrag.offset-rect.left)/rect.width));cursorMinute=Math.round((scheduleAxis.start-dayMinute(scheduleDate)+ratio*scheduleAxis.span)/5)*5;updateTimePreview();};
   const stop=(e,cancel=false)=>{const d=cursorDrag;if(!d||e?.pointerId!=null&&e.pointerId!==d.pointerId)return;cursorDrag=null;if(d.el.hasPointerCapture(d.pointerId))d.el.releasePointerCapture(d.pointerId);d.el.classList.remove('is-dragging');if(cancel){cursorMinute=d.minute;updateTimePreview();}else saveCursor();};
   root.addEventListener('pointerdown',e=>{const el=e.target.closest('.dispatch-cursor');if(!el||e.button!==0||!e.isPrimary)return;const hours=root.querySelector('.dispatch-hours').getBoundingClientRect();cursorDrag={el,pointerId:e.pointerId,minute:cursorMinute,offset:e.clientX-hours.left-(cursorAbsolute()-scheduleAxis.start)/scheduleAxis.span*hours.width};el.setPointerCapture(e.pointerId);el.classList.add('is-dragging');el.focus({preventScroll:true});e.preventDefault();},{signal});
@@ -140,7 +151,7 @@ function mountSchedule(root){
   root.addEventListener('keydown',e=>{if(!e.target.closest('.dispatch-cursor'))return;const step=e.shiftKey?15:5,min=scheduleAxis.start-dayMinute(scheduleDate),max=scheduleAxis.end-dayMinute(scheduleDate);if(e.key==='Escape'){stop(null,true);return;}if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();cursorMinute=e.key==='Home'?min:e.key==='End'?max:Math.max(min,Math.min(max,cursorMinute+(e.key==='ArrowRight'?step:-step)));updateTimePreview();saveCursor();},{signal});
   window.addEventListener('blur',()=>stop(null,true),{signal});
   const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(()=>updateCursor()):null;observer?.observe(root);
-  F.cleanup=()=>{stop(null,true);controller.abort();observer?.disconnect();scheduleRoot=null;};
+  F.cleanup=()=>{stop(null,true);controller.abort();observer?.disconnect();disposeControls();scheduleRoot=null;};
 }
 function selectSchedulePlan(id,vehicleId){
   const scroll=scheduleRoot?.querySelector('.dispatch-scroll')?.scrollLeft||0;
@@ -158,7 +169,7 @@ F.pages.plans={
   render(){
     if(F.state.justCreated){const p=F.plan();scheduleDate=p.date||'2026-10-23';scheduleQuery='';scheduleType=scheduleStatus='all';scheduleRange='today';cursorMinute=620;F.state.justCreated=false;}
     const stored=F.state.scheduleCursor;if(stored?.date===scheduleDate&&stored.range===scheduleRange&&Number.isFinite(stored.minute))cursorMinute=stored.minute;
-    return `<section class="plans-page"><div class="page-head"><h1>任务与调度</h1><div class="row"><a class="btn subtle" href="#automation">${F.icon('flow',16)} 自动化流程</a><div class="segmented"><button data-action="schedule-view" data-mode="timeline" class="${scheduleView==='timeline'?'active':''}">▣ 时间轴</button><button data-action="schedule-view" data-mode="list" class="${scheduleView==='list'?'active':''}">☷ 任务清单</button></div><a class="btn primary" href="#create">＋ 创建运行计划</a></div></div><div class="schedule-toolbar"><label class="dispatch-date">${F.icon('clock',19)}<input id="schedule-date" type="date" value="${scheduleDate}" aria-label="计划日期"></label><div class="segmented">${[['today','今天'],['24h','未来24h'],['3days','近3天']].map(([key,text])=>`<button class="${scheduleRange===key?'active':''}" data-action="schedule-range" data-range="${key}">${text}</button>`).join('')}</div><button class="schedule-reset-time" data-action="schedule-reset-time" title="回到场景当前时间 10:20">回到当前</button><span class="toolbar-spacer"></span><select id="schedule-type" aria-label="计划类型"><option value="all">类型：全部</option>${[...new Set(F.state.plans.map(p=>p.type))].map(type=>`<option ${scheduleType===type?'selected':''}>${h(type)}</option>`).join('')}</select><select id="schedule-status" aria-label="计划状态"><option value="all">状态：全部</option>${['scheduled','waiting','running','completed','cancelled'].map(status=>`<option value="${status}" ${scheduleStatus===status?'selected':''}>${F.status[status][0]}</option>`).join('')}</select><input id="schedule-search" type="search" aria-label="搜索计划或车辆" placeholder="⌕ RT-021" value="${h(scheduleQuery)}"><button class="icon-btn" data-action="schedule-refresh" aria-label="清除筛选">↻</button></div><div id="schedule-content">${scheduleContents()}</div></section>`;
+    return `<section class="plans-page"><div id="schedule-controls"></div><div id="schedule-content">${scheduleContents()}</div></section>`;
   },mount:mountSchedule,
   action(a,b){
     if(commonActions(a,b))return;
