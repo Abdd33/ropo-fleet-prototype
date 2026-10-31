@@ -10,3 +10,4 @@
 .dispatch-vehicle-top .soc.charging{color:#a579ff}.vehicle-battery.charging i{background:#9565ff}
 
 .dispatch-vehicle{width:100%;text-align:left;border:0;border-radius:0;cursor:pointer}.dispatch-vehicle:hover{background:#242d3c}.dispatch-row.is-selected .dispatch-vehicle:hover{background:#27354b}.dispatch-vehicle:focus-visible{outline:2px solid #a8c4ff;outline-offset:-3px}.dispatch-vehicle .vehicle-battery{display:block}
+.plans-page .schedule-layout.inspector-collapsed{grid-template-columns:minmax(0,1fr)}
