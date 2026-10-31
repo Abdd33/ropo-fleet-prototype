@@ -95,8 +95,10 @@
   }
   function nodeMarkup(node) {
     const k=kinds[node.kind]||kinds.event, s=state();
-    return `<div role="group" tabindex="0" class="flow-node ${s.selected===node.id?'is-selected':''}" data-node="${esc(node.id)}" aria-label="${esc(node.id+' '+label(node))}，拖动可调整位置" style="left:${node.x}px;top:${node.y}px;--node-color:${k.color}"><button type="button" class="flow-node-port input" data-port="input" aria-label="${esc(node.id)} 输入端口" title="输入端口：拖动或点击连接"></button><span class="flow-node-overline"><b>${esc(node.id)} · ${esc(k.sub)}</b><i></i></span><strong>${esc(label(node))}</strong><span class="flow-node-detail">${node.kind==='condition'?`SOC ≤ <b>${s.threshold}%</b> → 回场补能`:esc(k.detail)}</span><button type="button" class="flow-node-port output" data-port="output" aria-label="${esc(node.id)} 输出端口" title="输出端口：拖至另一个节点的输入端口"></button></div>`;
+    const quick=node.kind==='condition'?`<label class="flow-node-quick"><span>SOC 阈值 <output>${s.threshold}%</output></span><input class="flow-quick-threshold" type="range" min="10" max="50" step="1" value="${s.threshold}" aria-label="${esc(node.id)} 补能 SOC 阈值"></label>`:['dispatch','charge'].includes(node.kind)?`<label class="flow-node-quick"><span>执行模式</span><select class="flow-quick-mode" aria-label="${esc(node.id)} 执行模式"><option value="auto" ${node.mode!=='manual'?'selected':''}>自动执行</option><option value="manual" ${node.mode==='manual'?'selected':''}>人工确认后执行</option></select></label>`:'';
+    return `<div role="group" tabindex="0" class="flow-node ${quick?'has-quick':''} ${s.selected===node.id?'is-selected':''}" data-node="${esc(node.id)}" aria-label="${esc(node.id+' '+label(node))}，拖动可调整位置" style="left:${node.x}px;top:${node.y}px;--node-color:${k.color}"><button type="button" class="flow-node-port input" data-port="input" aria-label="${esc(node.id)} 输入端口" title="输入端口：拖动或点击连接"></button><span class="flow-node-overline"><b>${esc(node.id)} · ${esc(k.sub)}</b><i></i></span><strong>${esc(label(node))}</strong><span class="flow-node-detail">${node.kind==='condition'?`SOC ≤ <b>${s.threshold}%</b> → 回场补能`:esc(k.detail)}</span>${quick}<button type="button" class="flow-node-port output" data-port="output" aria-label="${esc(node.id)} 输出端口" title="输出端口：拖至另一个节点的输入端口"></button></div>`;
   }
+  const nodeHeight=n=>['condition','dispatch','charge'].includes(n.kind)?168:102;
   function wires() {
     const s=state();
     return `<svg class="flow-wires" viewBox="0 0 2000 1100"><defs><marker id="flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8Z" fill="context-stroke"/></marker></defs>${s.edges.map((e,index)=>{
@@ -108,7 +110,7 @@
   function draw() {
     if(!stage)return;stage.innerHTML=wires()+state().nodes.map(nodeMarkup).join('');
     const mini=root.querySelector('.flow-mini-map'),nodes=state().nodes;
-    if(mini){const minX=Math.min(0,...nodes.map(n=>n.x)),minY=Math.min(0,...nodes.map(n=>n.y));const scale=Math.min(96/(Math.max(1200,...nodes.map(n=>n.x+184))-minX),47/(Math.max(500,...nodes.map(n=>n.y+102))-minY));mini.innerHTML=nodes.map(n=>`<i style="left:${6+(n.x-minX)*scale}px;top:${6+(n.y-minY)*scale}px;width:${Math.max(4,184*scale)}px;height:${Math.max(3,102*scale)}px;background:${(kinds[n.kind]||kinds.event).color}"></i>`).join('');}
+    if(mini){const minX=Math.min(0,...nodes.map(n=>n.x)),minY=Math.min(0,...nodes.map(n=>n.y));const scale=Math.min(96/(Math.max(1200,...nodes.map(n=>n.x+184))-minX),47/(Math.max(500,...nodes.map(n=>n.y+nodeHeight(n)))-minY));mini.innerHTML=nodes.map(n=>`<i style="left:${6+(n.x-minX)*scale}px;top:${6+(n.y-minY)*scale}px;width:${Math.max(4,184*scale)}px;height:${Math.max(3,nodeHeight(n)*scale)}px;background:${(kinds[n.kind]||kinds.event).color}"></i>`).join('');}
     applyView();updateCanvasTools();updateLinkPreview();
   }
   function applyView() {
@@ -118,7 +120,7 @@
   function fit() {
     if(!surface)return;const nodes=state().nodes;if(!nodes.length)return;
     const minX=Math.min(...nodes.map(n=>n.x)),minY=Math.min(...nodes.map(n=>n.y));
-    const maxX=Math.max(...nodes.map(n=>n.x+184)),maxY=Math.max(...nodes.map(n=>n.y+102));
+    const maxX=Math.max(...nodes.map(n=>n.x+184)),maxY=Math.max(...nodes.map(n=>n.y+nodeHeight(n)));
     current.scale=Math.min(1,Math.max(.25,Math.min((surface.clientWidth-72)/(maxX-minX),(surface.clientHeight-150)/(maxY-minY))));
     current.x=(surface.clientWidth-(maxX-minX)*current.scale)/2-minX*current.scale;
     current.y=Math.max(40,(surface.clientHeight-(maxY-minY)*current.scale)/2-35)-minY*current.scale;applyView();
@@ -152,7 +154,9 @@
     const range=panel.querySelector('#flow-threshold'),num=panel.querySelector('.flow-threshold-number');
     if(range&&range!==source)range.value=state().threshold;if(num&&num!==source)num.value=state().threshold;
     const value=panel.querySelector('.flow-threshold-value');if(value)value.textContent='≤ '+state().threshold+'%';
-    const impact=panel.querySelector('.flow-impact');if(impact)impact.innerHTML=impactMarkup();draw();
+    const impact=panel.querySelector('#flow-threshold')&&panel.querySelector('.flow-impact');if(impact)impact.innerHTML=impactMarkup();
+    root.querySelectorAll('.flow-quick-threshold').forEach(input=>{if(input!==source)input.value=state().threshold;input.closest('.flow-node-quick').querySelector('output').textContent=state().threshold+'%';input.closest('.flow-node').querySelector('.flow-node-detail b').textContent=state().threshold+'%';});
+    updateCanvasTools();
   }
   function flushInspector() {
     const panel=root?.querySelector('.flow-inspector');if(!panel)return true;
@@ -167,7 +171,7 @@
   function bindInspector() {
     const panel=root.querySelector('.flow-inspector');
     const name=panel.querySelector('.flow-name-input');name?.addEventListener('input',()=>{const n=selected();const value=name.value.trim();if(!value)return;n.title=value;changed();draw();const heading=panel.querySelector('.flow-inspector-head h3');if(heading)heading.textContent=n.id+' '+value;});
-    const mode=panel.querySelector('.flow-mode');mode?.addEventListener('change',()=>{selected().mode=mode.value;changed();});
+    const mode=panel.querySelector('.flow-mode');mode?.addEventListener('change',()=>{const n=selected();n.mode=mode.value;const quick=stage.querySelector(`[data-node="${n.id}"] .flow-quick-mode`);if(quick)quick.value=mode.value;changed();});
     panel.querySelector('#flow-threshold')?.addEventListener('input',e=>{const value=validNumber(e.target.value,10,50);if(value===null)return;if(state().threshold!==value){state().threshold=value;changed();}syncThreshold(e.target);});
     numberFields.forEach(([selector,key,min,max])=>panel.querySelector(selector)?.addEventListener('input',e=>{const value=validNumber(e.target.value,min,max);if(value===null)return;if(state()[key]!==value){state()[key]=value;changed();}if(key==='threshold')syncThreshold(e.target);}));
   }
@@ -238,6 +242,7 @@
     canvas.addEventListener('pointerdown',event=>{
       if(event.button!==0||!event.isPrimary||drag||event.target.closest('.flow-controls,.flow-mini-map,.flow-run-report,.flow-trash,.flow-link-toolbar'))return;
       const el=event.target.closest('[data-node]'),node=el&&state().nodes.find(n=>n.id===el.dataset.node),port=event.target.closest('[data-port]');
+      if(event.target.closest('.flow-node-quick')){if(node){state().selected=node.id;selectedEdge=null;pendingLink=null;stage.querySelectorAll('[data-node]').forEach(card=>card.classList.toggle('is-selected',card.dataset.node===node.id));refreshInspector();updateLinkPreview();updateCanvasTools();}return;}
       const edge=event.target.closest('[data-edge]');
       if(port&&node){
         if(pendingLink&&pendingLink.id!==node.id&&pendingLink.port!==port.dataset.port){event.preventDefault();activatePort(node.id,port.dataset.port);return;}
@@ -259,6 +264,16 @@
       else if(d.type==='node'){d.node.x=Math.round(d.x+dx/current.scale);d.node.y=Math.round(d.y+dy/current.scale);draw();trashFeedback(overTrash(event),true);canvas.classList.add('is-dragging');}
       else{current.x=d.x+dx;current.y=d.y+dy;applyView();canvas.classList.add('is-dragging');}
       event.preventDefault();
+    },{signal});
+    canvas.addEventListener('input',event=>{
+      if(!event.target.matches('.flow-quick-threshold'))return;
+      const value=validNumber(event.target.value,10,50);if(value===null)return;
+      if(state().threshold!==value){state().threshold=value;changed();}syncThreshold(event.target);
+    },{signal});
+    canvas.addEventListener('change',event=>{
+      if(!event.target.matches('.flow-quick-mode'))return;
+      const node=state().nodes.find(n=>n.id===event.target.closest('[data-node]').dataset.node);if(!node)return;
+      node.mode=event.target.value;changed();if(selected()?.id===node.id)refreshInspector();
     },{signal});
     canvas.addEventListener('pointerup',event=>finish(event,true),{signal});
     canvas.addEventListener('pointercancel',event=>finish(event),{signal});
@@ -352,7 +367,7 @@
   }
   function render() {
     const s=state();const groups=[['触发节点',['start','event']],['逻辑控制',['condition','parallel']],['运营动作',['dispatch','pause']],['业务流程',['passenger','charge','finish']],['异常处理',['manual']]];
-    return `<section class="automation-page"><header class="flow-page-head"><div><div class="eyebrow">任务与调度 / 自动化流程</div><h1>日常运营与补能循环 <span class="flow-version">${s.publishedAt&&!s.draft?'已发布':'草稿'} v1.${s.version||3}</span></h1><span class="flow-save-status">${s.savedAt?'已保存于 '+esc(s.savedAt):'未保存的演示草稿'}</span></div><div class="flow-head-actions"><button class="btn" data-action="flow-check">☷ 检查流程</button><button class="btn primary" data-action="flow-publish">⇧ 发布演示版本</button></div></header>
+    return `<section class="automation-page"><header class="flow-page-head"><div><h1>自动化流程 <span class="flow-version">${s.publishedAt&&!s.draft?'已发布':'草稿'} v1.${s.version||3}</span></h1><span class="flow-save-status">${s.savedAt?'已保存于 '+esc(s.savedAt):'未保存的演示草稿'}</span></div><div class="flow-head-actions"><button class="btn" data-action="flow-check">☷ 检查流程</button><button class="btn primary" data-action="flow-publish">⇧ 发布演示版本</button></div></header>
       <div class="flow-context"><span>♧ 张江日班车组 · 12辆</span><span>◷ 08:00–18:00</span><span>❄ 张江边缘调度集群</span><span class="flow-online">12 在线 <i>8 接单</i><em>3 补能</em><b>1 待命</b></span><button class="btn subtle" data-action="flow-simulate">▷ 模拟测试</button></div>
       <div class="flow-workspace"><aside class="flow-palette"><h3>♧ 步骤组件库</h3><p>拖拽至画布，或点击添加</p><input class="flow-palette-search" aria-label="搜索步骤组件" placeholder="⌕ 搜索步骤组件…">${groups.map(([title,list])=>`<div class="flow-palette-group"><h4>${title}</h4><div>${list.map(kind=>`<button type="button" class="flow-palette-item" title="拖拽至画布，或点击添加" data-action="flow-add" data-kind="${kind}"><i style="color:${kinds[kind].color};background:${kinds[kind].color}1a">${kinds[kind].icon}</i><span>${kinds[kind].title}</span><b>+</b></button>`).join('')}</div></div>`).join('')}<div class="flow-fleet"><span>◉ 日班车组运行分布 <b>12辆</b></span><div>${Array.from({length:12},(_,i)=>`<i class="${i>7?'charging':''}">${String(i+1).padStart(3,'0')}${i>7&&i<11?'ϟ':''}</i>`).join('')}</div></div></aside>
       <div class="flow-canvas" tabindex="0" aria-label="自动化流程画布"><div class="flow-canvas-caption">流程编辑 <span>拖动端口连线 · 点击连线断开 · 拖入垃圾桶删除</span></div><div class="flow-stage"></div><div class="flow-link-toolbar" hidden><span></span><button data-action="flow-disconnect-selected">断开连线</button><button data-action="flow-clear-edge" aria-label="取消选择连线">×</button></div><div class="flow-trash"><div class="flow-trash-zone" role="region" aria-label="节点垃圾桶"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg><span>拖入此处删除</span></div><button class="flow-undo-delete" data-action="flow-undo-delete" hidden>↶ 撤销删除</button></div><div class="flow-run-report" hidden></div><button class="flow-mini-map" data-action="flow-fit" aria-label="适应画布"></button><div class="flow-canvas-bottom"><div class="flow-validation">✓ 0 语法错误　·　条件规则可编辑</div><div class="flow-controls"><button data-action="flow-zoom-out" aria-label="缩小">−</button><span class="flow-zoom-value">100%</span><button data-action="flow-zoom-in" aria-label="放大">+</button><span></span><button data-action="flow-fit" aria-label="适应画布" title="适应画布">⛶</button><button data-action="flow-grid" aria-label="切换网格" title="切换网格">▦</button></div></div></div><aside class="flow-inspector"></aside></div>
