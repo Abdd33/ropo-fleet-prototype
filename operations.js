@@ -11,7 +11,7 @@ F.pages.overview={render(){return `<section class="overview-page"><div class="pa
 function reroute(){F.modal('RT-008 · 改道建议',`<p class="dialog-description">原路线受金科路施工影响，预计延误 7 分钟。建议经祖冲之路绕行，增加 1.2 km，演示预计减少 4 分钟延误。</p><div class="divider"></div><label class="field"><span>绕行策略</span><select name="strategy"><option>采用建议路线 · 预计 10:58 到达</option><option>保持原路线 · 预计 11:02 到达</option></select></label><p class="muted">只更新演示计划，不连接导航或车控服务。</p><div class="dialog-actions"><button type="button" class="btn subtle" data-action="close-modal">取消</button><button class="btn primary">应用方案</button></div>`,data=>{const p=F.state.plans.find(p=>p.vehicleId==='RT-008');if(p){p.note=data.get('strategy');p.end=data.get('strategy').startsWith('采用')?'10:58':'11:02';}F.log('RT-008 模拟调整路线：'+data.get('strategy'));F.toast('路线方案已记录到演示计划');F.render();});}
 function maintenance(){const v=car('RT-046');if(v.workOrder){F.modal('维保工单 '+v.workOrder.id,`<p class="dialog-description">车辆：RT-046<br>处理人：${h(v.workOrder.owner)}<br>问题：${h(v.workOrder.issue)}<br>状态：待现场处理</p><div class="dialog-actions"><button class="btn primary">关闭</button></div>`);return;}F.modal('RT-046 · 创建维保工单',`<label class="field"><span>故障描述</span><textarea name="issue" required>5G 通信中断，请检查车载通信模块与电源。</textarea></label><label class="field"><span>指派班组</span><select name="owner"><option>维保组 #03 · 王工</option><option>通信保障组 #02 · 李工</option></select></label><p class="muted">本地模拟工单，不会通知现场人员。</p><div class="dialog-actions"><button type="button" class="btn subtle" data-action="close-modal">取消</button><button class="btn primary">创建演示工单</button></div>`,data=>{v.workOrder={id:'WO-'+String(F.state.logs.length+1001),issue:data.get('issue'),owner:data.get('owner')};F.log('RT-046 已创建演示维保工单 '+v.workOrder.id);F.toast('维保工单已保存');F.render();});}
 let scheduleView='timeline',scheduleQuery='',scheduleType='all',scheduleStatus='all',scheduleDate='2026-10-23',scheduleRange='today';
-let scheduleRoot=null,scheduleAxis=null,cursorDrag=null,cursorMinute=620;
+let scheduleRoot=null,scheduleAxis=null,cursorDrag=null,cursorMinute=620,inspectorOpen=true;
 const minutes=t=>{const [hh,mm]=t.split(':').map(Number);return hh*60+mm;};
 const dayMinute=date=>Date.parse(date+'T00:00:00Z')/60000;
 const clockText=value=>{const m=((Math.round(value)%1440)+1440)%1440;return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');};
@@ -108,7 +108,7 @@ function timelineMarkup(list){
   return `<div class="dispatch-scroll"><div class="dispatch-grid" style="--track-width:${scheduleAxis.width}px;--grid-step:${scheduleAxis.step/scheduleAxis.span*100}%"><div class="dispatch-heading"><div class="dispatch-vehicle-heading">${F.icon('vehicles',17)} 受控编排车辆 <small>SOC / 状态</small></div><div class="dispatch-hours">${ticks.map((t,index)=>`<span class="${index===0?'first':index===ticks.length-1?'last':''}" style="left:${(t-scheduleAxis.start)/scheduleAxis.span*100}%">${scheduleRange==='today'?clockText(t):new Date(t*60000).toISOString().slice(5,10)+' '+clockText(t)}</span>`).join('')}</div></div>${rows||'<div class="schedule-empty">没有符合条件的排班，可切换日期或清除筛选。</div>'}<div class="dispatch-grid-spacer"></div><div class="dispatch-cursor" role="slider" tabindex="0" aria-label="拖动时间游标" aria-orientation="horizontal"><span class="cursor-label"><i></i><b></b></span><span class="cursor-line"></span></div></div></div>`;
 }
 function summaryMarkup(list){const counts={};list.forEach(p=>{const phase=phaseFor(p);counts[phase]=(counts[phase]||0)+1;});return `<span>当前编排任务：<b>${list.length}</b> 项</span><span><i class="legend-dot running"></i>正在执行：<b>${(counts.running||0)+(counts.delayed||0)+(counts.maintenance||0)}</b></span><span><i class="legend-dot scheduled"></i>未触发：<b>${counts.scheduled||0}</b></span><span><i class="legend-dot delayed"></i>异常延误：<b>${counts.delayed||0}</b></span><span class="cursor-explainer">拖动红线预览排班时点</span>`;}
-function scheduleContents(){const list=filteredPlans();if(list.length&&!list.some(p=>p.id===F.state.selectedPlan)){F.state.selectedPlan=list[0].id;F.state.selectedId=list[0].vehicleId;}scheduleAxis=axisFor(list);cursorMinute=Math.max(scheduleAxis.start-dayMinute(scheduleDate),Math.min(scheduleAxis.end-dayMinute(scheduleDate),cursorMinute));return `<div class="schedule-layout"><div class="schedule-main">${scheduleView==='list'?`<div class="schedule-list">${taskTable(list)}</div>`:timelineMarkup(list)}</div>${inspector()}</div><footer class="schedule-foot">${summaryMarkup(list)}</footer>`;}
+function scheduleContents(){const list=filteredPlans();if(list.length&&!list.some(p=>p.id===F.state.selectedPlan)){F.state.selectedPlan=list[0].id;F.state.selectedId=list[0].vehicleId;}scheduleAxis=axisFor(list);cursorMinute=Math.max(scheduleAxis.start-dayMinute(scheduleDate),Math.min(scheduleAxis.end-dayMinute(scheduleDate),cursorMinute));return `<div class="schedule-layout ${inspectorOpen?'':'inspector-collapsed'}"><div class="schedule-main">${scheduleView==='list'?`<div class="schedule-list">${taskTable(list)}</div>`:timelineMarkup(list)}</div>${inspectorOpen?inspector():''}</div><footer class="schedule-foot">${summaryMarkup(list)}</footer>`;}
 function updateCursor(){
   if(!scheduleRoot||!scheduleAxis)return;const cursor=scheduleRoot.querySelector('.dispatch-cursor');
   if(cursor){
@@ -122,7 +122,7 @@ function updateCursor(){
 }
 function updateTimePreview(){
   updateCursor();scheduleRoot.querySelectorAll('.dispatch-task').forEach(el=>{const p=F.state.plans.find(p=>p.id===el.dataset.id);if(!p)return;const phase=phaseFor(p);el.className=`dispatch-task ${cardTheme(p,phase)} ${p.id===F.state.selectedPlan?'is-selected':''}`;el.dataset.phase=phase;el.querySelector('.task-phase').textContent=phaseLabels[phase];const note=el.querySelector('.task-note');note.textContent=taskNote(p,phase);});
-  const panel=scheduleRoot.querySelector('.plan-inspector');if(panel)panel.outerHTML=inspector();const footer=scheduleRoot.querySelector('.schedule-foot');if(footer)footer.innerHTML=summaryMarkup(filteredPlans());
+  const panel=scheduleRoot.querySelector('.plan-inspector');if(panel&&inspectorOpen)panel.outerHTML=inspector();const footer=scheduleRoot.querySelector('.schedule-foot');if(footer)footer.innerHTML=summaryMarkup(filteredPlans());
 }
 function saveCursor(){F.state.scheduleCursor={date:scheduleDate,range:scheduleRange,minute:cursorMinute};F.save();}
 function mountSchedule(root){
@@ -155,11 +155,21 @@ function mountSchedule(root){
 }
 function selectSchedulePlan(id,vehicleId){
   const scroll=scheduleRoot?.querySelector('.dispatch-scroll')?.scrollLeft||0;
+  inspectorOpen=true;
   selectPlan(id);F.render();
   const scroller=scheduleRoot?.querySelector('.dispatch-scroll');if(scroller)scroller.scrollLeft=scroll;
   if(vehicleId){const button=[...scheduleRoot.querySelectorAll('[data-action="schedule-vehicle"]')].find(el=>el.dataset.id===vehicleId);button?.focus({preventScroll:true});}
 }
 function selectScheduleVehicle(vehicleId){
+  const selected=F.state.plans.find(p=>p.id===F.state.selectedPlan);
+  if(inspectorOpen&&selected?.vehicleId===vehicleId){
+    inspectorOpen=false;
+    const scroll=scheduleRoot?.querySelector('.dispatch-scroll')?.scrollLeft||0;
+    F.render();
+    const scroller=scheduleRoot?.querySelector('.dispatch-scroll');if(scroller)scroller.scrollLeft=scroll;
+    const button=[...scheduleRoot.querySelectorAll('[data-action="schedule-vehicle"]')].find(el=>el.dataset.id===vehicleId);button?.focus({preventScroll:true});
+    return;
+  }
   const visible=filteredPlans().filter(p=>p.vehicleId===vehicleId).sort((a,b)=>planStart(a)-planStart(b));
   const available=visible.filter(p=>p.status!=='cancelled'),plans=available.length?available:visible,time=cursorAbsolute();
   const plan=plans.find(p=>planStart(p)<=time&&planEnd(p)>time)||plans.find(p=>planStart(p)>time)||plans[plans.length-1];
