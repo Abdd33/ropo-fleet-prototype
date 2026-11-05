@@ -5,7 +5,7 @@
   const MAIN = ["prepare", "operate", "charge", "close"];
   let root, canvas, stage, observer, controller, scope = "root", selectedId = null;
   let view = { x: 30, y: 65, scale: 0.8 }, views = {}, drag = null, pending = null, selectedEdge = null, undo = null;
-  let showExceptions = false;
+  let showExceptions = false, spaceHeld = false;
   const expanded = /* @__PURE__ */ new Set();
   let dirty = false, results = [], resultIndex = 0, simulationScenario = "current", playback = 0, timer = null;
   const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -37,7 +37,7 @@
   };
   const extraHeight = (n) => expanded.has(n.id) && n.children ? inlineSteps(n).length * 72 + 20 : 0;
   const nodeHeight = (n) => baseHeight(n) + extraHeight(n);
-  const displayNode = (n) => ({ ...n, y: n.y + Math.max(0, ...model().graph.nodes.filter((p) => p.y < n.y && expanded.has(p.id)).map((p) => extraHeight(p))) });
+  const displayNode = (n) => n;
   function inlineHTML(n) {
     if (!expanded.has(n.id) || !n.children) return "";
     return `<div class="flow-inline-steps">${inlineSteps(n).map((c, i) => `<button class="flow-inline-child ${selectedId === c.id ? "is-selected" : ""}" data-action="flow-child" data-parent="${h(n.id)}" data-id="${h(c.id)}"><span>${String(i + 1).padStart(2, "0")}</span><strong>${h(title(c))}</strong>${(spec(c).fields || []).filter((f) => f.type === "number").map((f) => `<small>${h(f.label)} ${h(c.config[f.key])}</small>`).join("")}</button>`).join("")}</div>`;
@@ -45,15 +45,11 @@
   const outputY = (n, key) => 53 + (quickField(n) ? 52 : 0) + (n.children ? 32 : 0) + Math.max(0, outputs(n).findIndex((o) => o.key === key)) * 27 + 13.5;
   const point = (n, port, key) => ({ x: n.x + (port === "output" ? 248 : 0), y: n.y + (port === "output" ? outputY(n, key) : 32) });
   const path = (a, b) => {
-    const bend = Math.max(60, Math.abs(b.x - a.x) * 0.45);
+    const bend = Math.max(32, Math.min(180, Math.abs(b.x - a.x) * 0.45));
     return `M${a.x},${a.y} C${a.x + bend},${a.y} ${b.x - bend},${b.y} ${b.x},${b.y}`;
   };
   function edgePath(edge, a, b) {
-    const start = point(a, "output", edge.outcome), end = point(b, "input");
-    if (end.x > start.x) return path(start, end);
-    const lane = Math.min(a.y, b.y) - 45 - (edge.outcome === "timeout" ? 24 : 0);
-    const right = start.x + 38, left = end.x - 32;
-    return `M${start.x},${start.y} C${right},${start.y} ${right},${lane} ${start.x},${lane} C${start.x - 70},${lane} ${end.x + 70},${lane} ${end.x},${lane} C${left},${lane} ${left},${end.y} ${end.x},${end.y}`;
+    return path(point(a, "output", edge.outcome), point(b, "input"));
   }
   const issues = () => M.validate(model(), F.state.vehicles);
   function status(text) {
@@ -96,7 +92,7 @@
       const originalA = g.nodes.find((n) => n.id === e.from), originalB = g.nodes.find((n) => n.id === e.to);
       const a = originalA && displayNode(originalA), b = originalB && displayNode(originalB);
       if (!a || !b) return "";
-      if (scope === "root" && !showExceptions && (e.outcome === "error" || a.kind === "manual") && a.id !== selectedId && b.id !== selectedId) return "";
+      if (scope === "root" && !showExceptions && e.outcome === "error" && e.id !== selectedEdge && a.id !== selectedId && b.id !== selectedId) return "";
       const o = outputs(a).find((o2) => o2.key === e.outcome), d = edgePath(e, a, b);
       return `<g class="flow-edge ${selectedEdge === e.id ? "is-selected" : ""}"><path class="flow-wire" d="${d}" stroke="${o?.color || spec(a).color}" marker-end="url(#flow-arrow-v2)"/><path class="flow-wire-hit" data-edge="${h(e.id)}" d="${d}" role="button" tabindex="0" aria-label="选择连线 ${h(title(a) + " " + (o?.label || "") + " 到 " + title(b))}"/></g>`;
     }).join("")}<path class="flow-wire-preview" style="display:none"/></svg>`;
@@ -120,6 +116,10 @@
   }
   function applyView() {
     if (stage) stage.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.scale})`;
+    if (canvas) {
+      canvas.style.backgroundPosition = `${view.x}px ${view.y}px`;
+      canvas.style.backgroundSize = `${22 * view.scale}px ${22 * view.scale}px`;
+    }
     const el = root?.querySelector(".flow-zoom-value");
     if (el) el.textContent = Math.round(view.scale * 100) + "%";
   }
@@ -133,7 +133,7 @@
     applyView();
   }
   function zoom(factor) {
-    const old = view.scale, next = Math.max(0.3, Math.min(1.5, old * factor)), x = canvas.clientWidth / 2, y = canvas.clientHeight / 2;
+    const old = view.scale, next = Math.max(0.15, Math.min(2.5, old * factor)), x = canvas.clientWidth / 2, y = canvas.clientHeight / 2;
     view.x = x - (x - view.x) * next / old;
     view.y = y - (y - view.y) * next / old;
     view.scale = next;
@@ -157,16 +157,8 @@
     draw();
     refreshInspector();
     canvas?.focus({ preventScroll: true });
-    requestAnimationFrame(() => {
-      const current = selected();
-      const n = current && displayNode(scope === "root" ? current : model().graph.nodes.find((p) => p.id === scope));
-      if (!canvas || !n) return;
-      const x = n.x * view.scale + view.x, y = n.y * view.scale + view.y;
-      if (x < 16 || x + 248 * view.scale > canvas.clientWidth - 16) view.x = canvas.clientWidth / 2 - (n.x + 124) * view.scale;
-      if (y < 50 || y + nodeHeight(n) * view.scale > canvas.clientHeight - 90) view.y = canvas.clientHeight / 2 - (n.y + nodeHeight(n) / 2) * view.scale;
-      applyView();
-    });
   }
+
   function fieldHTML(n, f) {
     const v = n.config?.[f.key] ?? "";
     return `<label class="flow-form-label">${h(f.label)}${f.type === "select" ? `<select data-field="${h(f.key)}" aria-label="${h(f.label)}">${f.options.map((o) => `<option value="${h(o.value)}" ${String(v) === String(o.value) ? "selected" : ""}>${h(o.label)}</option>`).join("")}</select>` : `<input type="${f.type || "number"}" data-field="${h(f.key)}" min="${f.min ?? ""}" max="${f.max ?? ""}" step="${f.step ?? 1}" value="${h(v)}" aria-label="${h(f.label)}">`}</label>`;
@@ -279,7 +271,7 @@
       return;
     }
     const p = pos || { x: (canvas.clientWidth / 2 - view.x) / view.scale - 124, y: (canvas.clientHeight / 2 - view.y) / view.scale - 80 };
-    const n = M.createNode(kind, newId(kind), Math.max(0, p.x), Math.max(0, p.y));
+    const n = M.createNode(kind, newId(kind), p.x, p.y);
     g.nodes.push(n);
     changed();
     choose(n.id);
@@ -468,7 +460,15 @@
       return node?.closest("[data-node]")?.dataset.node;
     };
     root.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || !e.isPrimary) return;
+      if (!e.isPrimary || (e.button !== 0 && e.button !== 1)) return;
+      if (e.target.closest(".flow-canvas") && (e.button === 1 || spaceHeld)) {
+        e.preventDefault();
+        drag = { type: "pan", x: view.x, y: view.y, px: e.clientX, py: e.clientY, pointerId: e.pointerId, target: canvas };
+        canvas.setPointerCapture(e.pointerId);
+        canvas.classList.add("is-dragging");
+        return;
+      }
+      if (e.button !== 0) return;
       const item = e.target.closest(".flow-palette-item"), node = e.target.closest("[data-node]"), port = e.target.closest("[data-port]");
       if (item) {
         if (!flushInspector()) return;
@@ -485,12 +485,12 @@
         scope = "root";
         refreshInspector();
         pending = { from: node.dataset.node, outcome: port.dataset.outcome };
-        drag = { type: "link", px: e.clientX, py: e.clientY, pointerId: e.pointerId, target: port };
-        port.setPointerCapture(e.pointerId);
+        drag = { type: "link", px: e.clientX, py: e.clientY, pointerId: e.pointerId, target: canvas };
+        canvas.setPointerCapture(e.pointerId);
         previewLink();
         return;
       }
-      if (e.target.closest("button,input,select,[data-edge]")) return;
+      if (e.target.closest("button,input,select")) return;
       if (node) {
         if (!flushInspector()) return;
         selectedId = null;
@@ -510,11 +510,12 @@
       const d = drag, dx = e.clientX - d.px, dy = e.clientY - d.py;
       if (!d.moved && Math.hypot(dx, dy) < 5) return;
       d.moved = true;
+      canvas.classList.add("is-dragging");
       e.preventDefault();
       if (d.type === "node") {
         const n = graph().nodes.find((n2) => n2.id === d.id);
-        n.x = Math.max(0, d.x + dx / view.scale);
-        n.y = Math.max(0, d.y + dy / view.scale);
+        n.x = d.x + dx / view.scale;
+        n.y = d.y + dy / view.scale;
         draw();
         root.querySelector(".flow-trash-zone").classList.add("is-active");
         root.querySelector(".flow-trash-zone").classList.toggle("is-over", inTrash(e));
@@ -542,7 +543,7 @@
       if (!d) return;
       drag = null;
       d.ghost?.remove();
-      canvas.classList.remove("is-drop-target");
+      canvas.classList.remove("is-drop-target", "is-dragging");
       root.querySelector(".flow-trash-zone").classList.remove("is-over", "is-active");
       if (d.target.hasPointerCapture(d.pointerId)) d.target.releasePointerCapture(d.pointerId);
       if (d.moved) {
@@ -557,8 +558,13 @@
           draw();
         } else if (d.moved && inTrash(e)) remove(d.id, { x: d.x, y: d.y });
         else {
-          if (d.moved) changed();
-          choose(d.id);
+          if (d.moved) {
+            selectedId = d.id;
+            selectedEdge = null;
+            changed();
+            draw();
+            refreshInspector();
+          } else choose(d.id);
         }
       }
       if (d.type === "add" && d.moved && commit && inCanvas(e) && !inTrash(e)) {
@@ -578,6 +584,8 @@
     window.addEventListener("pointercancel", (e) => finish(e, false), { signal });
     window.addEventListener("blur", (e) => {
       finish(e, false);
+      spaceHeld = false;
+      canvas.classList.remove("is-panning-ready");
       pending = null;
       previewLink();
     }, { signal });
@@ -617,16 +625,22 @@
         choose(node.dataset.node);
       }
     }, { signal, capture: true });
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "Space") {spaceHeld = false;canvas.classList.remove("is-panning-ready");}
+    }, { signal });
     canvas.addEventListener("wheel", (e) => {
       if (e.target.closest("input,select")) return;
       e.preventDefault();
-      const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, old = view.scale, next = Math.max(0.3, Math.min(1.5, old * Math.exp(-e.deltaY * 1e-3)));
+      const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, old = view.scale, next = Math.max(0.15, Math.min(2.5, old * Math.exp(-e.deltaY * 1e-3)));
       view.x = x - (x - view.x) * next / old;
       view.y = y - (y - view.y) * next / old;
       view.scale = next;
       applyView();
     }, { signal, passive: false });
     root.addEventListener("keydown", (e) => {
+      if (e.code === "Space" && e.target.closest(".flow-canvas") && !e.target.matches("input,select,textarea")) {
+        e.preventDefault();spaceHeld = true;canvas.classList.add("is-panning-ready");return;
+      }
       if (e.key === "Escape") {
         finish(e, false);
         pending = null;
@@ -647,6 +661,7 @@
     canvas = root.querySelector(".flow-canvas");
     stage = root.querySelector(".flow-stage");
     scope = "root";
+    spaceHeld = false;
     expanded.clear();
     showExceptions = false;
     selectedId = null;

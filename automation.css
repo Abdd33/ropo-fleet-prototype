@@ -34,3 +34,13 @@
 .flow-inline-child.is-complete{border-color:#419e87}
 .flow-node:has(.flow-inline-steps){border-color:#577396}
 .flow-node-results{flex-shrink:0}
+
+/* Unbounded world: only the viewport clips, never the world origin. */
+.flow-stage{width:0;height:0;overflow:visible;pointer-events:none}
+.flow-node{pointer-events:auto}
+.flow-wire-hit{pointer-events:stroke;stroke-width:10}
+.flow-canvas.is-panning-ready,.flow-canvas.is-panning-ready *{cursor:grab!important}
+.flow-canvas.is-dragging,.flow-canvas.is-dragging *{cursor:grabbing!important}
+
+.flow-node:has(.flow-inline-steps){z-index:1}
+.flow-node.is-selected,.flow-node:focus-within{z-index:2}
