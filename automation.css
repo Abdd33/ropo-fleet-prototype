@@ -21,3 +21,16 @@
 .flow-node-header b,.flow-node-header strong{font-size:15px;line-height:1.35}.flow-node-header small{font-size:11px;line-height:1.35}.flow-node-summary{font-size:12px;line-height:1.45}.flow-node-result{font-size:11px;line-height:1.4}.flow-exception-toggle{display:inline-flex;align-items:center;gap:6px;min-height:31px;padding:5px 9px;border:1px solid #455067;border-radius:4px;background:#252e3d;color:#aabbd4;font-size:10px;white-space:nowrap}.flow-exception-toggle:before{content:'';width:6px;height:6px;border:1px solid #c78290;border-radius:50%;background:#51323f}.flow-exception-toggle:hover{border-color:#947081;background:#3b2f3d;color:#ebbdc7}.flow-exception-toggle[aria-pressed=true],.flow-exception-toggle.is-active{border-color:#af788b;background:#472e3e;color:#f0b9c7}.flow-exception-toggle[aria-pressed=true]:before,.flow-exception-toggle.is-active:before{background:#ee93aa;border-color:#ee93aa}.flow-canvas-caption{max-width:calc(100% - 32px)}.flow-canvas-caption span{line-height:1.6}
 @media(prefers-reduced-motion:reduce){.automation-page *{animation:none!important;transition:none!important}}
 .flow-child-list li:before{content:"·";font-size:18px}.flow-node-summary{overflow:hidden}
+
+/* Inline subcards keep the main workflow visible. */
+.flow-inline-steps{display:flex;flex-direction:column;flex-shrink:0;gap:12px;padding:14px 12px 6px;background:#141d2b;border-top:1px solid #35465e;margin-top:8px}
+.flow-inline-child{position:relative;display:grid;grid-template-columns:23px 1fr;align-content:center;gap:4px 7px;flex:0 0 60px;height:60px;padding:8px 10px;text-align:left;border:1px solid #35465a;border-radius:5px;background:#202c3d;color:#d4dfef;cursor:pointer}
+.flow-inline-child>span{grid-row:1/3;align-self:center;color:#738cae;font-size:11px;font-variant-numeric:tabular-nums}
+.flow-inline-child>strong{font-size:13px;font-weight:500;line-height:1.4}
+.flow-inline-child>small{grid-column:2;color:#91a8c6;font-size:10px}
+.flow-inline-child:not(:last-child):after{content:'';position:absolute;top:100%;left:21px;height:13px;border-left:1px solid #526b8c}
+.flow-inline-child:hover,.flow-inline-child.is-selected{border-color:#73a9ff;background:#293e5c}
+.flow-inline-child.is-running{border-color:#59d7bb;box-shadow:0 0 0 2px #59d7bb33}
+.flow-inline-child.is-complete{border-color:#419e87}
+.flow-node:has(.flow-inline-steps){border-color:#577396}
+.flow-node-results{flex-shrink:0}

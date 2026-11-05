@@ -6,6 +6,7 @@
   let root, canvas, stage, observer, controller, scope = "root", selectedId = null;
   let view = { x: 30, y: 65, scale: 0.8 }, views = {}, drag = null, pending = null, selectedEdge = null, undo = null;
   let showExceptions = false;
+  const expanded = /* @__PURE__ */ new Set();
   let dirty = false, results = [], resultIndex = 0, simulationScenario = "current", playback = 0, timer = null;
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const now = () => (/* @__PURE__ */ new Date()).toLocaleTimeString("zh-CN", { hour12: false });
@@ -19,18 +20,40 @@
   const title = (n) => n.title || spec(n)?.title || n.kind;
   const outputs = (n) => spec(n)?.outputs || [];
   const quickField = (n) => (spec(n)?.fields || []).find((f) => ["threshold", "targetSoc", "minutes", "waitMinutes"].includes(f.key));
-  const nodeHeight = (n) => 53 + 44 + (quickField(n) ? 52 : 0) + (n.children ? 32 : 0) + outputs(n).length * 27 + 12;
-  const outputY = (n, key) => 53 + 44 + (quickField(n) ? 52 : 0) + (n.children ? 32 : 0) + Math.max(0, outputs(n).findIndex((o) => o.key === key)) * 27 + 13.5;
+  const baseHeight = (n) => 53 + (quickField(n) ? 52 : 0) + (n.children ? 32 : 0) + outputs(n).length * 27 + 12;
+  const inlineSteps = (n) => {
+    const g = n.children;
+    if (!g) return [];
+    const seen = /* @__PURE__ */ new Set(), list = [];
+    let node = g.nodes.find((x) => x.kind === "stepStart");
+    while (node && !seen.has(node.id)) {
+      seen.add(node.id);
+      if (!["stepStart", "stepEnd"].includes(node.kind)) list.push(node);
+      const e = g.edges.find((e2) => e2.from === node.id && e2.outcome === "next");
+      node = g.nodes.find((x) => x.id === e?.to);
+    }
+    g.nodes.filter((x) => !seen.has(x.id) && !["stepStart", "stepEnd"].includes(x.kind)).forEach((x) => list.push(x));
+    return list;
+  };
+  const extraHeight = (n) => expanded.has(n.id) && n.children ? inlineSteps(n).length * 72 + 20 : 0;
+  const nodeHeight = (n) => baseHeight(n) + extraHeight(n);
+  const displayNode = (n) => ({ ...n, y: n.y + Math.max(0, ...model().graph.nodes.filter((p) => p.y < n.y && expanded.has(p.id)).map((p) => extraHeight(p))) });
+  function inlineHTML(n) {
+    if (!expanded.has(n.id) || !n.children) return "";
+    return `<div class="flow-inline-steps">${inlineSteps(n).map((c, i) => `<button class="flow-inline-child ${selectedId === c.id ? "is-selected" : ""}" data-action="flow-child" data-parent="${h(n.id)}" data-id="${h(c.id)}"><span>${String(i + 1).padStart(2, "0")}</span><strong>${h(title(c))}</strong>${(spec(c).fields || []).filter((f) => f.type === "number").map((f) => `<small>${h(f.label)} ${h(c.config[f.key])}</small>`).join("")}</button>`).join("")}</div>`;
+  }
+  const outputY = (n, key) => 53 + (quickField(n) ? 52 : 0) + (n.children ? 32 : 0) + Math.max(0, outputs(n).findIndex((o) => o.key === key)) * 27 + 13.5;
   const point = (n, port, key) => ({ x: n.x + (port === "output" ? 248 : 0), y: n.y + (port === "output" ? outputY(n, key) : 32) });
   const path = (a, b) => {
     const bend = Math.max(60, Math.abs(b.x - a.x) * 0.45);
     return `M${a.x},${a.y} C${a.x + bend},${a.y} ${b.x - bend},${b.y} ${b.x},${b.y}`;
   };
   function edgePath(edge, a, b) {
-    const p = point(a, "output", edge.outcome), q = point(b, "input");
-    if (q.x > p.x) return path(p, q);
-    const lane = Math.max(a.y + nodeHeight(a), b.y + nodeHeight(b)) + 24 + outputs(a).findIndex((o) => o.key === edge.outcome) * 12;
-    return `M${p.x},${p.y} H${p.x + 20} Q${p.x + 30},${p.y} ${p.x + 30},${p.y + 10} V${lane - 10} Q${p.x + 30},${lane} ${p.x + 20},${lane} H${q.x - 32} Q${q.x - 42},${lane} ${q.x - 42},${lane - 10} V${q.y + 10} Q${q.x - 42},${q.y} ${q.x - 32},${q.y} H${q.x}`;
+    const start = point(a, "output", edge.outcome), end = point(b, "input");
+    if (end.x > start.x) return path(start, end);
+    const lane = Math.min(a.y, b.y) - 45 - (edge.outcome === "timeout" ? 24 : 0);
+    const right = start.x + 38, left = end.x - 32;
+    return `M${start.x},${start.y} C${right},${start.y} ${right},${lane} ${start.x},${lane} C${start.x - 70},${lane} ${end.x + 70},${lane} ${end.x},${lane} C${left},${lane} ${left},${end.y} ${end.x},${end.y}`;
   }
   const issues = () => M.validate(model(), F.state.vehicles);
   function status(text) {
@@ -57,26 +80,21 @@
     const count = issues().length;
     F.toast(count ? `草稿已保存，${count} 项配置待修复` : "流程与车组配置已保存", count ? "warning" : "success");
   }
-  function summary(n) {
-    if (n.kind === "trigger") return `${model().group.shiftStart} 启动 · 每辆车独立执行`;
-    if (n.kind === "decide") return "按班次与电量，选择唯一去向";
-    if (n.kind === "manual") return `承接 ${model().graph.edges.filter((e) => e.to === n.id && e.outcome === "error").length} 个异常出口 · 处理后复检或终止`;
-    return spec(n)?.description || "";
-  }
   function nodeHTML(n, ghost = false) {
     const k = spec(n), q = quickField(n);
     return `<div class="flow-node ${selectedId === n.id ? "is-selected" : ""}" role="group" tabindex="${ghost ? -1 : 0}" data-node="${h(n.id)}" aria-label="${h(title(n))}，可拖动" style="left:${n.x}px;top:${n.y}px;height:${nodeHeight(n)}px;--node-color:${k.color}">
-      ${n.kind !== "trigger" && n.kind !== "stepStart" ? `<button type="button" class="flow-node-port input" data-port="input" style="top:19px" aria-label="${h(title(n))} 输入端口"></button>` : ""}
-      <div class="flow-node-header"><i>${k.icon || "◇"}</i><span><small>${h(k.subtitle || "流程步骤")}</small><b>${h(title(n))}</b></span></div>
-      <div class="flow-node-summary">${h(summary(n))}</div>
-      ${q ? `<label class="flow-node-quick"><span>${h(q.label)} <output>${h(n.config[q.key])}${["threshold", "targetSoc"].includes(q.key) ? "%" : " min"}</output></span><input type="range" data-quick="${h(q.key)}" min="${q.min ?? 1}" max="${q.max ?? 100}" step="${q.step ?? 1}" value="${h(n.config[q.key])}" aria-label="${h(title(n) + " " + q.label)}"></label>` : ""}
-      ${n.children ? `<button type="button" class="flow-node-open" data-action="flow-open" data-id="${h(n.id)}">查看 ${n.children.nodes.filter((x) => !["stepStart", "stepEnd"].includes(x.kind)).length} 个子步骤 <span>↗</span></button>` : ""}
-      <div class="flow-node-results">${outputs(n).map((o) => `<div class="flow-node-result" style="--result-color:${o.color || k.color}"><span>${h(o.label)}</span><button type="button" class="flow-node-port output" data-port="output" data-outcome="${h(o.key)}" style="top:${outputY(n, o.key) - 13}px" aria-label="${h(title(n) + " " + o.label + " 输出端口")}"></button></div>`).join("")}</div></div>`;
+    ${n.kind !== "trigger" && n.kind !== "stepStart" ? `<button type="button" class="flow-node-port input" data-port="input" style="top:19px" aria-label="${h(title(n))} 输入端口"></button>` : ""}
+    <div class="flow-node-header"><i>${k.icon || "◇"}</i><span><small>${h(k.subtitle || "流程步骤")}</small><b>${h(title(n))}</b></span></div>
+
+    ${q ? `<label class="flow-node-quick"><span>${h(q.label)} <output>${h(n.config[q.key])}${["threshold", "targetSoc"].includes(q.key) ? "%" : " min"}</output></span><input type="range" data-quick="${h(q.key)}" min="${q.min ?? 1}" max="${q.max ?? 100}" step="${q.step ?? 1}" value="${h(n.config[q.key])}" aria-label="${h(title(n) + " " + q.label)}"></label>` : ""}
+    ${n.children ? `<button type="button" class="flow-node-open" data-action="flow-open" data-id="${h(n.id)}">${expanded.has(n.id) ? "收起" : "展开"} ${n.children.nodes.filter((x) => !["stepStart", "stepEnd"].includes(x.kind)).length} 个子步骤 <span>${expanded.has(n.id) ? "⌃" : "⌄"}</span></button>` : ""}
+    <div class="flow-node-results">${outputs(n).map((o) => `<div class="flow-node-result" style="--result-color:${o.color || k.color}"><span>${h(o.label)}</span><button type="button" class="flow-node-port output" data-port="output" data-outcome="${h(o.key)}" style="top:${outputY(n, o.key) - 13}px" aria-label="${h(title(n) + " " + o.label + " 输出端口")}"></button></div>`).join("")}</div>${inlineHTML(n)}</div>`;
   }
   function wires() {
     const g = graph();
     return `<svg class="flow-wires" width="2400" height="1800" viewBox="0 0 2400 1800"><defs><marker id="flow-arrow-v2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L8 4L0 8Z" fill="context-stroke"/></marker></defs>${g.edges.map((e) => {
-      const a = g.nodes.find((n) => n.id === e.from), b = g.nodes.find((n) => n.id === e.to);
+      const originalA = g.nodes.find((n) => n.id === e.from), originalB = g.nodes.find((n) => n.id === e.to);
+      const a = originalA && displayNode(originalA), b = originalB && displayNode(originalB);
       if (!a || !b) return "";
       if (scope === "root" && !showExceptions && (e.outcome === "error" || a.kind === "manual") && a.id !== selectedId && b.id !== selectedId) return "";
       const o = outputs(a).find((o2) => o2.key === e.outcome), d = edgePath(e, a, b);
@@ -85,7 +103,10 @@
   }
   function draw() {
     if (!stage || !graph()) return;
-    stage.innerHTML = wires() + graph().nodes.map((n) => nodeHTML(n)).join("");
+    const editingScope = scope;
+    scope = "root";
+    stage.innerHTML = wires() + model().graph.nodes.map((n) => nodeHTML(displayNode(n))).join("");
+    scope = editingScope;
     applyView();
     updateValidation();
     const toolbar = root.querySelector(".flow-link-toolbar"), edge = graph().edges.find((e) => e.id === selectedEdge);
@@ -103,7 +124,7 @@
     if (el) el.textContent = Math.round(view.scale * 100) + "%";
   }
   function fit() {
-    const ns = graph()?.nodes;
+    const ns = model().graph.nodes.map(displayNode);
     if (!ns?.length) return;
     const minX = Math.min(...ns.map((n) => n.x)), minY = Math.min(...ns.map((n) => n.y)), w = Math.max(...ns.map((n) => n.x + 248)) - minX, z = Math.max(...ns.map((n) => n.y + nodeHeight(n))) - minY;
     view.scale = Math.min(1, Math.max(0.3, Math.min((canvas.clientWidth - 100) / w, (canvas.clientHeight - 150) / z)));
@@ -137,7 +158,8 @@
     refreshInspector();
     canvas?.focus({ preventScroll: true });
     requestAnimationFrame(() => {
-      const n = selected();
+      const current = selected();
+      const n = current && displayNode(scope === "root" ? current : model().graph.nodes.find((p) => p.id === scope));
       if (!canvas || !n) return;
       const x = n.x * view.scale + view.x, y = n.y * view.scale + view.y;
       if (x < 16 || x + 248 * view.scale > canvas.clientWidth - 16) view.x = canvas.clientWidth / 2 - (n.x + 124) * view.scale;
@@ -154,15 +176,15 @@
     if (!n) return `<div class="flow-empty-selection">选择一张卡片，查看步骤和结果出口。</div>`;
     const g = graph();
     return `<header class="flow-inspector-head"><button class="flow-inspector-close" data-action="flow-deselect" aria-label="收起配置栏">×</button><span class="eyebrow">${scope === "root" ? "主流程配置" : "子步骤配置"}</span><h3>${h(title(n))}</h3><p>${h(spec(n).subtitle || "流程步骤")}</p></header><div class="flow-inspector-body">
-    <label class="flow-form-label">卡片名称<input value="${h(title(n))}" maxlength="32" data-field="title" aria-label="卡片名称"></label>
-    <p class="flow-field-help">${h(summary(n))}</p>${(spec(n).fields || []).map((f) => fieldHTML(n, f)).join("")}
-    ${n.kind === "trigger" ? `<div class="flow-rule-box">${h(model().group.name)} · ${model().group.vehicleIds.length} 辆<br>${h(model().group.shiftStart)}–${h(model().group.shiftEnd)}<button class="btn subtle" data-action="flow-group">设置车组与班次</button></div>` : ""}
-    ${n.children ? `<div class="flow-section-label">包含的子步骤<button class="btn subtle" data-action="flow-open" data-id="${h(n.id)}">进入编辑 ↗</button></div><ul class="flow-child-list">${n.children.nodes.filter((x) => !["stepStart", "stepEnd"].includes(x.kind)).map((x) => `<li>${h(title(x))}</li>`).join("")}</ul><p class="flow-field-help">具体执行顺序以阶段内连线为准。</p>` : ""}
-    ${outputs(n).length ? `<div class="flow-section-label">结果与下一步</div>${outputs(n).map((o) => {
+  <label class="flow-form-label">卡片名称<input value="${h(title(n))}" maxlength="32" data-field="title" aria-label="卡片名称"></label>
+  ${(spec(n).fields || []).map((f) => fieldHTML(n, f)).join("")}
+  ${n.kind === "trigger" ? `<div class="flow-rule-box">${h(model().group.name)} · ${model().group.vehicleIds.length} 辆<br>${h(model().group.shiftStart)}–${h(model().group.shiftEnd)}<button class="btn subtle" data-action="flow-group">设置车组与班次</button></div>` : ""}
+  ${n.children ? `<div class="flow-section-label">包含的子步骤<button class="btn subtle" data-action="flow-open" data-id="${h(n.id)}">展开 / 收起</button></div><ul class="flow-child-list">${n.children.nodes.filter((x) => !["stepStart", "stepEnd"].includes(x.kind)).map((x) => `<li>${h(title(x))}</li>`).join("")}</ul>` : ""}
+  ${outputs(n).length ? `<div class="flow-section-label">结果与下一步</div>${outputs(n).map((o) => {
       const edge = g.edges.find((e) => e.from === n.id && e.outcome === o.key);
       return `<label class="flow-output-item"><span><i style="background:${o.color || spec(n).color}"></i>${h(o.label)}</span><select data-output="${h(o.key)}" aria-label="${h(o.label + " 下一步")}"><option value="">未连接</option>${g.nodes.filter((x) => x.id !== n.id && !["trigger", "stepStart"].includes(x.kind)).map((x) => `<option value="${h(x.id)}" ${edge?.to === x.id ? "selected" : ""}>${h(title(x))}</option>`).join("")}</select></label>`;
     }).join("")}` : ""}
-    <p class="flow-field-help">从命名出口拖出连线，或在上方选择下一步。${scope !== "root" ? "步骤失败时，沿所属主卡片的异常出口处理。" : ""}</p></div><footer class="flow-inspector-footer"><button class="btn primary" data-action="flow-save">保存草稿</button><button class="btn subtle" data-action="flow-remove">删除卡片</button></footer>`;
+  </div><footer class="flow-inspector-footer"><button class="btn primary" data-action="flow-save">保存草稿</button><button class="btn subtle" data-action="flow-remove">删除卡片</button></footer>`;
   }
   function refreshInspector() {
     const el = root?.querySelector(".flow-inspector");
@@ -206,39 +228,45 @@
   function paletteHTML() {
     const list = M.palette[scope === "root" ? "root" : model().graph.nodes.find((n) => n.id === scope)?.kind] || [];
     const groups = scope === "root" ? [["业务阶段", list.filter((k) => MAIN.includes(k))], ["触发与控制", list.filter((k) => !MAIN.includes(k))]] : [["可用子步骤", list.filter((k) => !["stepStart", "stepEnd"].includes(k))], ["阶段边界", list.filter((k) => ["stepStart", "stepEnd"].includes(k))]];
-    return `<h3>${scope === "root" ? "流程组件" : "阶段子步骤"}</h3><p>拖拽至画布，或点击添加</p><input class="flow-palette-search" aria-label="搜索流程组件" placeholder="搜索组件…">${groups.filter((x) => x[1].length).map(([name, ks]) => `<div class="flow-palette-group"><h4>${name}</h4><div>${ks.map((kind) => {
+    return `<h3>${scope === "root" ? "流程组件" : "阶段子步骤"}</h3><input class="flow-palette-search" aria-label="搜索流程组件" placeholder="搜索组件…">${groups.filter((x) => x[1].length).map(([name, ks]) => `<div class="flow-palette-group"><h4>${name}</h4><div>${ks.map((kind) => {
       const s = M.catalog[kind];
       return `<button type="button" class="flow-palette-item" data-action="flow-add" data-kind="${kind}" aria-label="添加${h(s.title)}"><i style="color:${s.color};background:${s.color}18">${s.icon || "◇"}</i><span>${h(s.title)}<small>${h(s.subtitle || "执行步骤")}</small></span><b>+</b></button>`;
-    }).join("")}</div></div>`).join("")}<div class="flow-palette-tip">${scope === "root" ? "主卡片组织业务阶段。进入卡片，可编辑内部步骤。" : "子步骤只在当前阶段生效。失败结果交给主流程统一处理。"}<br>放置卡片后，请连接明确的结果出口。</div>`;
+    }).join("")}</div></div>`).join("")}`;
   }
   function assignmentHTML() {
     const g = model().group;
     const members = g.vehicleIds.map((id) => F.state.vehicles.find((v) => v.id === id)).filter(Boolean), ready = members.filter((v) => !["offline", "maintenance"].includes(v.status)).length;
-    return `<div class="flow-group-icon">${F.icon("vehicles", 24)}</div><div class="flow-assignment-copy"><span class="eyebrow">当前分配车组</span><h2>${h(g.name)} <span>${members.length} 辆</span></h2><p>共用一套流程 · 每辆车按自己的状态独立执行</p></div><div class="flow-group-members">${members.slice(0, 4).map((v) => `<span title="${h(v.id)}">${h(v.id)}</span>`).join("")}${members.length > 4 ? `<span>+${members.length - 4}</span>` : ""}</div><div class="flow-assignment-meta"><strong>${h(g.shiftStart)}–${h(g.shiftEnd)}</strong><span>${ready} 辆可参与 · ${members.length - ready} 辆需检查</span></div><button class="btn" data-action="flow-group">车组设置 ${F.icon("settings", 14)}</button>`;
+    return `<div class="flow-group-icon">${F.icon("vehicles", 24)}</div><div class="flow-assignment-copy"><span class="eyebrow">当前分配车组</span><h2>${h(g.name)} <span>${members.length} 辆</span></h2></div><div class="flow-group-members">${members.slice(0, 4).map((v) => `<span title="${h(v.id)}">${h(v.id)}</span>`).join("")}${members.length > 4 ? `<span>+${members.length - 4}</span>` : ""}</div><div class="flow-assignment-meta"><strong>${h(g.shiftStart)}–${h(g.shiftEnd)}</strong><span>${ready} 辆可参与 · ${members.length - ready} 辆需检查</span></div><button class="btn" data-action="flow-group">车组设置 ${F.icon("settings", 14)}</button>`;
   }
   function render() {
     const m = model();
     return `<section class="automation-page"><header class="flow-page-head"><div><h1>自动化流程 <span class="flow-version">${m.publishedAt && !m.draft ? "已发布" : "草稿"} v2.${m.version}</span></h1><p class="flow-subtitle">${h(m.name || "日常运营与补能循环")} <span class="flow-save-status">${dirty ? "有未保存的更改" : m.savedAt ? "已保存于 " + h(m.savedAt) : "未保存的演示草稿"}</span></p></div><div class="flow-head-actions"><button class="btn" data-action="flow-check">检查流程</button><button class="btn" data-action="flow-save">保存草稿</button><button class="btn primary" data-action="flow-publish">发布演示版本</button></div></header>
-    <section class="flow-assignment">${assignmentHTML()}</section><div class="flow-toolbar"><div class="flow-breadcrumb"><strong>主流程</strong><span>4 个业务阶段 · 按车辆独立运行</span></div><div class="flow-toolbar-actions"><button class="btn subtle flow-exception-toggle" data-action="flow-exceptions" aria-pressed="false">显示异常连线</button><select class="flow-scenario" aria-label="模拟场景"><option value="current">按车辆当前状态</option><option value="low">低电量回场</option><option value="closing">到达收班时间</option><option value="resource">补能资源不足</option><option value="missing">车辆数据缺失</option></select><button class="btn primary" data-action="flow-simulate">▷ 车组模拟</button></div></div>
-    <div class="flow-workspace"><aside class="flow-palette"></aside><div class="flow-canvas" tabindex="0" aria-label="自动化流程画布"><div class="flow-canvas-caption">主流程<span>拖动卡片调整位置 · 从结果出口连接下一步</span></div><div class="flow-stage"></div><div class="flow-link-toolbar" hidden><span></span><button data-action="flow-disconnect">断开连线</button><button data-action="flow-clear-edge" aria-label="取消选中连线">×</button></div><div class="flow-canvas-bottom"><button class="flow-validation" data-action="flow-check"></button><div class="flow-controls"><button data-action="flow-zoom-out" aria-label="缩小">−</button><span class="flow-zoom-value">100%</span><button data-action="flow-zoom-in" aria-label="放大">+</button><button data-action="flow-fit" aria-label="适应画布">⛶</button></div></div><div class="flow-trash"><div class="flow-trash-zone" role="region" aria-label="节点垃圾桶">${F.icon("close", 18)}<span>拖入此处删除</span></div><button class="flow-undo-delete" data-action="flow-undo" hidden>↶ 撤销删除</button></div></div><aside class="flow-inspector"></aside></div><section class="flow-simulation" hidden></section><div class="flow-local-note">演示环境 · 车组、流程与模拟结果仅保存在当前浏览器，不向车辆发送指令。${F.state.flow ? "旧版流程草稿已保留。" : ""}</div></section>`;
+  <section class="flow-assignment">${assignmentHTML()}</section><div class="flow-toolbar"><div class="flow-breadcrumb"><strong>主流程</strong></div><div class="flow-toolbar-actions"><button class="btn subtle flow-exception-toggle" data-action="flow-exceptions" aria-pressed="false">显示异常连线</button><select class="flow-scenario" aria-label="模拟场景"><option value="current">按车辆当前状态</option><option value="low">低电量回场</option><option value="closing">到达收班时间</option><option value="resource">补能资源不足</option><option value="missing">车辆数据缺失</option></select><button class="btn primary" data-action="flow-simulate">▷ 车组模拟</button></div></div>
+  <div class="flow-workspace"><aside class="flow-palette"></aside><div class="flow-canvas" tabindex="0" aria-label="自动化流程画布"><div class="flow-stage"></div><div class="flow-link-toolbar" hidden><span></span><button data-action="flow-disconnect">断开连线</button><button data-action="flow-clear-edge" aria-label="取消选中连线">×</button></div><div class="flow-canvas-bottom"><button class="flow-validation" data-action="flow-check"></button><div class="flow-controls"><button data-action="flow-zoom-out" aria-label="缩小">−</button><span class="flow-zoom-value">100%</span><button data-action="flow-zoom-in" aria-label="放大">+</button><button data-action="flow-fit" aria-label="适应画布">⛶</button></div></div><div class="flow-trash"><div class="flow-trash-zone" role="region" aria-label="节点垃圾桶">${F.icon("close", 18)}<span>拖入此处删除</span></div><button class="flow-undo-delete" data-action="flow-undo" hidden>↶ 撤销删除</button></div></div><aside class="flow-inspector"></aside></div><section class="flow-simulation" hidden></section></section>`;
   }
   function enter(next) {
     if (!root) return;
     stopPlayback();
-    views[scope] = { ...view };
-    scope = next;
+    if (next === "root") {
+      expanded.clear();
+      scope = "root";
+    } else {
+      expanded.has(next) ? expanded.delete(next) : expanded.add(next);
+      scope = "root";
+    }
     selectedId = null;
     selectedEdge = null;
     pending = null;
     root.querySelector(".flow-workspace").classList.remove("is-inspecting");
-    const parent = model().graph.nodes.find((n) => n.id === scope);
-    root.querySelector(".flow-breadcrumb").innerHTML = scope === "root" ? "<strong>主流程</strong><span>业务阶段与结果分支</span>" : `<button class="btn subtle" data-action="flow-root">← 返回主流程</button><strong>${h(title(parent))}</strong><span>阶段子步骤</span>`;
-    root.querySelector(".flow-canvas-caption").innerHTML = `${scope === "root" ? "主流程" : h(title(parent))}<span>${scope === "root" ? "拖动卡片调整位置 · 从结果出口连接下一步" : "按连线执行步骤 · 失败交给主卡片的异常出口"}</span>`;
     root.querySelector(".flow-palette").innerHTML = paletteHTML();
-    view = views[scope] || { x: 30, y: 50, scale: 0.8 };
     draw();
     refreshInspector();
-    if (!views[scope]) requestAnimationFrame(fit);
+  }
+  function focusNode(graphId, id) {
+    if (!flushInspector()) return;
+    scope = graphId || "root";
+    if (scope !== "root") expanded.add(scope);
+    choose(id);
   }
   function newId(prefix) {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -316,12 +344,12 @@
     if (!pending) return;
     const a = graph().nodes.find((n) => n.id === pending.from);
     if (!a) return;
-    const start = point(a, "output", pending.outcome);
+    const start = point(displayNode(a), "output", pending.outcome);
     p.setAttribute("d", path(start, cursor || { x: start.x + 80, y: start.y }));
   }
   function validationDialog() {
     const list = issues();
-    F.modal(list.length ? "流程检查 · 待修复" : "流程检查通过", list.length ? `<p class="muted">修复后即可模拟或发布；当前草稿仍可保存。</p><div class="flow-check-list">${list.map((item, i) => `<button type="button" class="btn" data-action="flow-focus-issue" data-index="${i}">${i + 1}. ${h(item.message)}</button>`).join("")}</div>` : '<p>车组成员、班次、节点参数和各级连线检查通过。</p><p class="muted">可以选择不同场景，模拟每辆车的执行路径。</p><div class="dialog-actions"><button class="btn primary" type="submit">完成</button></div>');
+    F.modal(list.length ? "流程检查 · 待修复" : "流程检查通过", list.length ? `<div class="flow-check-list">${list.map((item, i) => `<button type="button" class="btn" data-action="flow-focus-issue" data-index="${i}">${i + 1}. ${h(item.message)}</button>`).join("")}</div>` : '<p>车组成员、班次、节点参数和各级连线检查通过。</p><div class="dialog-actions"><button class="btn primary" type="submit">完成</button></div>');
   }
   function knownGroups() {
     if (!F.state.automationGroups) F.state.automationGroups = [clone(model().group), { id: "support", name: "张江补能保障组", vehicleIds: ["RT-012", "RT-021", "RT-034", "RT-041"].filter((id) => F.state.vehicles.some((v) => v.id === id)), shiftStart: "09:00", shiftEnd: "17:00" }];
@@ -331,7 +359,7 @@
     let draft = clone(model().group);
     const groups = knownGroups();
     let members = new Set(draft.vehicleIds);
-    const body = () => `<div class="flow-group-form"><p class="muted">绑定一个车组，每辆成员车分别执行当前流程。修改只影响演示配置。</p><label class="flow-form-label">选择车组<select name="groupId" aria-label="选择车组">${groups.map((g) => `<option value="${h(g.id)}" ${g.id === draft.id ? "selected" : ""}>${h(g.name)}</option>`).join("")}<option value="new">＋ 新建车组</option></select></label><div class="flow-form-grid"><label class="flow-form-label">车组名称<input name="groupName" value="${h(draft.name)}" required maxlength="30" aria-label="车组名称"></label><div></div><label class="flow-form-label">班次开始<input type="time" name="shiftStart" value="${h(draft.shiftStart)}" required aria-label="班次开始"></label><label class="flow-form-label">班次结束<input type="time" name="shiftEnd" value="${h(draft.shiftEnd)}" required aria-label="班次结束"></label></div><div class="flow-members-toolbar"><input class="flow-member-search" placeholder="搜索车辆编号或车牌" aria-label="搜索车组成员"><span class="flow-member-count">已选 ${members.size} 辆</span><button class="btn subtle" type="button" data-member-clear>清空</button></div><div class="flow-member-list">${F.state.vehicles.map((v) => `<label data-member-row="${h(v.id + " " + v.plate)}"><input type="checkbox" name="members" value="${h(v.id)}" ${members.has(v.id) ? "checked" : ""}><span><strong>${h(v.id)}</strong><small>${h(F.status[v.status]?.[0] || v.status)} · SOC ${v.soc}%</small></span></label>`).join("")}</div><p class="flow-field-help">离线或维修车辆可保留在车组，模拟时进入条件检查与人工处置。班次暂支持当日时段。</p><div class="dialog-actions"><button class="btn subtle" type="button" data-action="close-modal">取消</button><button class="btn primary" type="submit">保存并绑定车组</button></div></div>`;
+    const body = () => `<div class="flow-group-form"><label class="flow-form-label">选择车组<select name="groupId" aria-label="选择车组">${groups.map((g) => `<option value="${h(g.id)}" ${g.id === draft.id ? "selected" : ""}>${h(g.name)}</option>`).join("")}<option value="new">＋ 新建车组</option></select></label><div class="flow-form-grid"><label class="flow-form-label">车组名称<input name="groupName" value="${h(draft.name)}" required maxlength="30" aria-label="车组名称"></label><div></div><label class="flow-form-label">班次开始<input type="time" name="shiftStart" value="${h(draft.shiftStart)}" required aria-label="班次开始"></label><label class="flow-form-label">班次结束<input type="time" name="shiftEnd" value="${h(draft.shiftEnd)}" required aria-label="班次结束"></label></div><div class="flow-members-toolbar"><input class="flow-member-search" placeholder="搜索车辆编号或车牌" aria-label="搜索车组成员"><span class="flow-member-count">已选 ${members.size} 辆</span><button class="btn subtle" type="button" data-member-clear>清空</button></div><div class="flow-member-list">${F.state.vehicles.map((v) => `<label data-member-row="${h(v.id + " " + v.plate)}"><input type="checkbox" name="members" value="${h(v.id)}" ${members.has(v.id) ? "checked" : ""}><span><strong>${h(v.id)}</strong><small>${h(F.status[v.status]?.[0] || v.status)} · SOC ${v.soc}%</small></span></label>`).join("")}</div><div class="dialog-actions"><button class="btn subtle" type="button" data-action="close-modal">取消</button><button class="btn primary" type="submit">保存并绑定车组</button></div></div>`;
     const bind = () => {
       const form = document.querySelector(".flow-group-form");
       form.querySelector("[name=groupId]").onchange = (e) => {
@@ -388,7 +416,7 @@
     stopPlayback();
     const result = results[resultIndex];
     if (!result) return;
-    const trace = result.trace.filter((t) => t.graphId === scope), token = playback;
+    const trace = result.trace.filter((t) => t.graphId === "root" || expanded.has(t.graphId)), token = playback;
     let i = 0;
     const step = () => {
       if (token !== playback || !root?.isConnected) return;
@@ -398,7 +426,7 @@
       });
       if (i >= trace.length) return;
       const t = trace[i++];
-      const node = [...stage.querySelectorAll("[data-node]")].find((el) => el.dataset.node === t.nodeId);
+      const node = [...stage.querySelectorAll("[data-node],.flow-inline-child")].find((el) => (el.dataset.node || el.dataset.id) === t.nodeId);
       node?.classList.add("is-running");
       timer = setTimeout(step, 450);
     };
@@ -410,7 +438,7 @@
     panel.hidden = !results.length;
     if (!results.length) return;
     const r = results[resultIndex], labels = { waiting: "等待下一事件", completed: "已结束", manual: "等待人工", blocked: "流程阻塞" };
-    panel.innerHTML = `<header><div><h3>车组模拟结果 <span>${results.length} 辆</span></h3><p>沿当前连线逐车演算 · 一次运营观察窗口 · 不改变车辆与计划数据</p></div><button class="btn" data-action="flow-play">回放当前画布</button><button class="btn subtle" data-action="flow-hide-results" aria-label="关闭模拟结果">×</button></header><div class="flow-simulation-grid"><div class="flow-vehicle-results">${results.map((x, i) => `<button class="flow-vehicle-result ${i === resultIndex ? "is-selected" : ""}" data-action="flow-result" data-index="${i}"><strong>${h(x.vehicleId)}</strong><span class="flow-status-badge ${h(x.status)}">${h(labels[x.status] || x.status)}</span></button>`).join("")}</div><div class="flow-trace"><div class="flow-trace-heading"><strong>${h(r.vehicleId)} · ${h(r.summary)}</strong>${r.status === "manual" ? `<div><button class="btn" data-action="flow-recover">模拟处理后复检</button><button class="btn subtle" data-action="flow-terminate">终止本车模拟</button></div>` : ""}</div><ol>${r.trace.map((t, i) => `<li><span class="flow-trace-index">${i + 1}</span><div class="flow-trace-content"><strong>${h(t.title || t.nodeId)}${t.graphId !== "root" ? "<small>阶段内步骤</small>" : ""}</strong><p>${h(t.message || t.outcome || "进入节点")}</p></div><button class="btn subtle" data-action="flow-trace-focus" data-scope="${h(t.graphId)}" data-id="${h(t.nodeId)}" aria-label="定位${h(t.title || t.nodeId)}">↗</button></li>`).join("")}</ol></div></div>`;
+    panel.innerHTML = `<header><div><h3>车组模拟结果 <span>${results.length} 辆</span></h3></div><button class="btn" data-action="flow-play">回放当前画布</button><button class="btn subtle" data-action="flow-hide-results" aria-label="关闭模拟结果">×</button></header><div class="flow-simulation-grid"><div class="flow-vehicle-results">${results.map((x, i) => `<button class="flow-vehicle-result ${i === resultIndex ? "is-selected" : ""}" data-action="flow-result" data-index="${i}"><strong>${h(x.vehicleId)}</strong><span class="flow-status-badge ${h(x.status)}">${h(labels[x.status] || x.status)}</span></button>`).join("")}</div><div class="flow-trace"><div class="flow-trace-heading"><strong>${h(r.vehicleId)} · ${h(r.summary)}</strong>${r.status === "manual" ? `<div><button class="btn" data-action="flow-recover">模拟处理后复检</button><button class="btn subtle" data-action="flow-terminate">终止本车模拟</button></div>` : ""}</div><ol>${r.trace.map((t, i) => `<li><span class="flow-trace-index">${i + 1}</span><div class="flow-trace-content"><strong>${h(t.title || t.nodeId)}${t.graphId !== "root" ? "<small>阶段内步骤</small>" : ""}</strong><p>${h(t.message || t.outcome || "进入节点")}</p></div><button class="btn subtle" data-action="flow-trace-focus" data-scope="${h(t.graphId)}" data-id="${h(t.nodeId)}" aria-label="定位${h(t.title || t.nodeId)}">↗</button></li>`).join("")}</ol></div></div>`;
   }
   function simulate() {
     if (issues().length) {
@@ -443,11 +471,19 @@
       if (e.button !== 0 || !e.isPrimary) return;
       const item = e.target.closest(".flow-palette-item"), node = e.target.closest("[data-node]"), port = e.target.closest("[data-port]");
       if (item) {
+        if (!flushInspector()) return;
+        selectedId = null;
+        scope = "root";
+        refreshInspector();
         drag = { type: "add", kind: item.dataset.kind, px: e.clientX, py: e.clientY, pointerId: e.pointerId, target: item };
         item.setPointerCapture(e.pointerId);
         return;
       }
       if (port && port.dataset.port === "output") {
+        if (!flushInspector()) return;
+        selectedId = null;
+        scope = "root";
+        refreshInspector();
         pending = { from: node.dataset.node, outcome: port.dataset.outcome };
         drag = { type: "link", px: e.clientX, py: e.clientY, pointerId: e.pointerId, target: port };
         port.setPointerCapture(e.pointerId);
@@ -456,6 +492,10 @@
       }
       if (e.target.closest("button,input,select,[data-edge]")) return;
       if (node) {
+        if (!flushInspector()) return;
+        selectedId = null;
+        scope = "root";
+        refreshInspector();
         const n = graph().nodes.find((n2) => n2.id === node.dataset.node);
         drag = { type: "node", id: n.id, x: n.x, y: n.y, px: e.clientX, py: e.clientY, pointerId: e.pointerId, target: canvas };
         canvas.setPointerCapture(e.pointerId);
@@ -563,12 +603,19 @@
         return;
       }
       if (edge) {
+        if (!flushInspector()) return;
+        selectedId = null;
+        scope = "root";
+        refreshInspector();
         selectedEdge = edge.dataset.edge;
         draw();
         canvas.focus({ preventScroll: true });
         return;
       }
-      if (node && !e.target.closest("button,input,select")) choose(node.dataset.node);
+      if (node && !e.target.closest("button,input,select")) {
+        scope = "root";
+        choose(node.dataset.node);
+      }
     }, { signal, capture: true });
     canvas.addEventListener("wheel", (e) => {
       if (e.target.closest("input,select")) return;
@@ -592,7 +639,7 @@
         if (selectedEdge) disconnect(selectedEdge);
         else if (selectedId) remove(selectedId);
       }
-      if (e.key === "Enter" && e.target.matches("[data-node]")) choose(e.target.dataset.node);
+      if (e.key === "Enter" && e.target.matches("[data-node]")) focusNode("root", e.target.dataset.node);
     }, { signal });
   }
   function mount(container) {
@@ -600,6 +647,7 @@
     canvas = root.querySelector(".flow-canvas");
     stage = root.querySelector(".flow-stage");
     scope = "root";
+    expanded.clear();
     showExceptions = false;
     selectedId = null;
     selectedEdge = null;
@@ -634,7 +682,7 @@
       }
       const key = e.target.dataset.quick;
       if (key) {
-        const n = graph().nodes.find((n2) => n2.id === e.target.closest("[data-node]").dataset.node);
+        const n = model().graph.nodes.find((n2) => n2.id === e.target.closest("[data-node]").dataset.node);
         n.config[key] = Number(e.target.value);
         e.target.previousElementSibling.querySelector("output").textContent = e.target.value + (["threshold", "targetSoc"].includes(key) ? "%" : " min");
         changed();
@@ -687,11 +735,27 @@
     if (a === "flow-group") groupDialog();
     else if (a === "flow-save") save();
     else if (a === "flow-check") validationDialog();
-    else if (a === "flow-add") addNode(el.dataset.kind);
-    else if (a === "flow-open") enter(el.dataset.id);
+    else if (a === "flow-add") {
+      if (!flushInspector()) return true;
+      selectedId = null;
+      scope = "root";
+      refreshInspector();
+      addNode(el.dataset.kind);
+    } else if (a === "flow-child") {
+      if (!flushInspector()) return true;
+      scope = el.dataset.parent;
+      selectedId = el.dataset.id;
+      selectedEdge = null;
+      root.querySelector(".flow-workspace").classList.add("is-inspecting");
+      draw();
+      refreshInspector();
+    } else if (a === "flow-open") enter(el.dataset.id);
     else if (a === "flow-root") enter("root");
-    else if (a === "flow-deselect") choose(null);
-    else if (a === "flow-fit") fit();
+    else if (a === "flow-deselect") {
+      selectedId = null;
+      scope = "root";
+      choose(null);
+    } else if (a === "flow-fit") fit();
     else if (a === "flow-zoom-in") zoom(1.2);
     else if (a === "flow-zoom-out") zoom(1 / 1.2);
     else if (a === "flow-remove") remove(selectedId);
@@ -704,8 +768,7 @@
       const issue = issues()[Number(el.dataset.index)];
       document.querySelector("#modal").close();
       if (issue) {
-        enter(issue.graphId || "root");
-        if (issue.nodeId) choose(issue.nodeId);
+        focusNode(issue.graphId || "root", issue.nodeId || null);
         fit();
       }
     } else if (a === "flow-exceptions") {
@@ -724,15 +787,7 @@
       results = [];
       renderSimulation();
     } else if (a === "flow-trace-focus") {
-      enter(el.dataset.scope);
-      choose(el.dataset.id);
-      const n = selected();
-      if (n) {
-        view.scale = 0.9;
-        view.x = canvas.clientWidth / 2 - (n.x + 124) * view.scale;
-        view.y = canvas.clientHeight / 2 - (n.y + nodeHeight(n) / 2) * view.scale;
-        applyView();
-      }
+      focusNode(el.dataset.scope, el.dataset.id);
       canvas.scrollIntoView({ behavior: "smooth", block: "center" });
     } else if (a === "flow-recover" || a === "flow-terminate") {
       const previous = results[resultIndex], vehicle = F.state.vehicles.find((v) => v.id === previous.vehicleId);
